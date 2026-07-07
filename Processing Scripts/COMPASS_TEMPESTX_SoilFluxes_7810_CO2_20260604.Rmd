@@ -124,6 +124,7 @@ ctrl_metadat <- ctrl_metadat %>%
       total_seconds - 30,
       total_seconds) )
 
+### Add a flag here for times that are changed 
 
 #freshwater metadata 
 fw_metadat <- metadat %>%
