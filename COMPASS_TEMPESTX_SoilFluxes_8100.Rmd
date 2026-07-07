@@ -1,0 +1,225 @@
+---
+title: "COMPASS_TEMPESTX_SoilFluxes_8100"
+author: "Zoe Read"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+## Goals of this code: 
+1. Read in 8100 files - with chamber ID, start time, end time, V1-V4
+2. Separate 8100 file into each flux 
+3. Extract metadata from each flux file into a metadata sheet
+
+##Setup: 
+```{r Setup}
+library(dplyr)
+library(stringr)
+library(purrr)
+library(tibble)
+library(readr)
+library(R.utils)
+```
+
+## Pull zipped 81x files into temporary data folder
+```{r, include=FALSE}
+
+# Create a temporary directory
+tmp_dir <- tempdir()
+
+# Get list of files inside the zip
+zip_contents <- unzip("8100_data/Test_FW_Autochamber_Data.zip", list = TRUE)
+
+# Keep only 8100 files from freshwater
+metadat_files <- zip_contents$Name[
+  grepl("81x$", zip_contents$Name, ignore.case = TRUE)]
+
+# Extract the 8100 files
+unzip(
+  "8100_data/Test_FW_Autochamber_Data.zip",
+  files = metadat_files,
+  exdir = tmp_dir
+)
+
+# List extracted 8100 files (full paths)
+file.list <- list.files(
+  path = tmp_dir,
+  pattern = "81x$",
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+file.list
+
+```
+
+##Create separate files in a  temporary directory: 
+```{r}
+
+##Split file into multiple files, one for each chamber run and export to temporary directory 
+tmp_dir # view temporary directory
+
+##Need to create a function that will read in all the autochamber files and separate them! 
+
+for (i in file.list) { 
+  lines <- readLines(i)
+
+# create file counter
+file_counter <- 1
+current_chunk <- c()
+
+# go through every line and create a new chunk every time there is "LI-8100"
+for (line in lines) {
+  # If the line contains "8100", save the current chunk and start a new file
+  if (grepl("LI-8100", line)) {
+    # Write to file if it is not empty
+    if (length(current_chunk) > 0) {
+      output_name <- paste0(tmp_dir, "/8100_split_file_", file_counter, ".txt")
+      writeLines(current_chunk, output_name)
+      file_counter <- file_counter + 1
+      current_chunk <- c() # Reset chunk
+    }
+  }
+  
+  # append the line to the current chunk
+  current_chunk <- c(current_chunk, line)
+}
+
+# write the very last chunk of lines to a file
+if (length(current_chunk) > 0) {
+  output_name <- paste0(tmp_dir, "8100_split_file_", file_counter, ".txt")
+  writeLines(current_chunk, output_name)
+}
+}
+```
+
+##Code from fluxfinder functions: 
+```{r}
+
+# List extracted JSON files (full paths)
+file.list <- list.files(
+  path = tmp_dir,
+  pattern = "txt$",
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+ffi_read_LI78x0 <- function(file, model) {
+
+  dat_raw <- readLines(file)
+
+  # Make sure this is the desired model
+  file_model <- substr(dat_raw[1], 1, 7)
+  if(file_model != model) stop("This does not appear to be a ", model, " file!")
+
+  # Save the observation number
+  obs <- trimws(gsub("Obs#:\t", "", dat_raw[7], fixed = TRUE))
+    # Save the observation length
+  obs_length <- trimws(gsub("Observation Length:\t", "", dat_raw[10], fixed = TRUE))
+  # Save the machine serial number
+  sn <- trimws(gsub("Serial Number:\t", "", dat_raw[4], fixed = TRUE))
+  # Parse the collar label from the header
+  label <- trimws(gsub("Label:\t", "", dat_raw[9], fixed = TRUE))
+  # Parse the collar number from the header
+  chamber <- trimws(gsub("Chamber:\t", "", dat_raw[14], fixed = TRUE))
+  # Parse the chamber volume from the header
+  Vtotal <- trimws(gsub("Vtotal:\t", "", dat_raw[25], fixed = TRUE))
+  # Parse the dead band from the footer
+  DeadBand <- trimws(gsub("Dead Band:\t", "", dat_raw[length(dat_raw)-2], fixed = TRUE))
+  # Parse the closing time from the header and use it to make a collar field
+  TimeClosing <- trimws(gsub("TimeClosing:\t", "", dat_raw[length(dat_raw)-1], fixed = TRUE))
+  
+  # These files have 30 header lines, the column names in line 31,
+  # and then the column units in line 7. We only want the names and then data
+  total_lines = countLines(file)
+  lines_to_skip <- 30
+  lines_to_read <- total_lines - 30 - 25
+  
+  dat_read <- read.delim(
+    file = file,
+    skip = lines_to_skip,
+    nrows = lines_to_read,
+    sep = "\t",
+    header = TRUE)
+
+  # Get first and last timestamp
+  start_time <- first(dat_read$Date)
+  end_time <- last(dat_read$Date)
+  
+  # Get average of environmental variables (V1-V4)
+  Tcham <- mean(dat_read$Tcham, na.rm = TRUE)
+  Pressure <- mean(dat_read$Pressure, na.rm = TRUE)
+  V1_avg <- mean(dat_read$V1, na.rm = TRUE)
+  V2_avg <- mean(dat_read$V2, na.rm = TRUE)
+  V3_avg <- mean(dat_read$V3, na.rm = TRUE)
+  V4_avg <- mean(dat_read$V4, na.rm = TRUE)
+  
+  tmp <- data.frame(
+  SN = sn,
+  label = label,
+  chamber = chamber, 
+  Vtotal = Vtotal, 
+  obs_length = obs_length, 
+  DeadBand = DeadBand, 
+  TimeClosing = TimeClosing, 
+  start_time = start_time, 
+  end_time = end_time,
+  Tcham = Tcham, 
+  Pressure = Pressure, 
+  V1_avg = V1_avg,
+  V2_avg = V2_avg,
+  V3_avg = V3_avg,
+  V4_avg = V4_avg
+)
+
+  # ffi_message(basename(file), ": read ", nrow(dat_read), " rows of ", label, " data, ",
+  #             start_time, " to ", end_time)
+
+  return(tmp)
+}
+
+ffi_read_LI8100 <- function(file) {
+  ffi_read_LI78x0(file, "LI-8100")
+}
+
+alldat1 <- lapply(file.list, ffi_read_LI8100)
+
+# Combine into one data.table
+alldat <- data.table::rbindlist(alldat1, fill = TRUE)
+
+
+```
+
+##Match the 8100 metadata to the collar metadata
+```{r}
+
+collar_metadata <- read.csv("design/collar_map.csv")
+collar_metadata$Collar <- as.character(collar_metadata$Collar)
+
+alldat_collars <- alldat %>% 
+   left_join(collar_metadata, by=c("label"="Collar"))
+ 
+```
+
+
+##Write out parsed 8100 data: 
+```{r}
+
+folder_name <- "Processed_Data"
+
+if (!dir.exists(folder_name)) {
+  dir.create(folder_name)
+}
+
+#export as a csv to the folder that you want 
+write.csv(alldat_collars, file="Processed_Data/COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed.csv", row.names = FALSE)           #Change file name
+
+```
+
+##Remove temporary directory
+```{r}
+##Remove temporary directory
+unlink(tmp_dir, recursive = TRUE)
+```
+

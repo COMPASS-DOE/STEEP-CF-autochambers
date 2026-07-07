@@ -1,0 +1,163 @@
+---
+title: "STEEP_soil_fluxes_2024_CONTROL"
+author: "Roberta Peixoto"
+date: "2026-4-9"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(ggstatsplot)
+library(lubridate)
+library(data.table)
+library(fluxfinder)
+```
+
+## Reading metadata
+
+```{r , message=FALSE, warning = FALSE, results ='hide'}
+
+## Paths
+zip_file <- "CONTROL.zip"
+csv_inside_zip <- "CONTROL/TEMPESTX_CONTROL_ALL_2024.81x.csv"
+metadata_path <- "STEEP_CONTROL_Metadata_2024.csv"
+
+if (!file.exists(metadata_path)) {
+
+  unzip(
+    zipfile   = zip_file,
+    files     = csv_inside_zip,
+    exdir     = ".",
+    junkpaths = TRUE
+  )
+
+  # Read full file as text
+  lines <- readLines("TEMPESTX_CONTROL_ALL_2024.81x.csv")
+  # Remove line 1 and 3
+  clean_lines <- lines[-c(1, 3)]
+  # Column names (former line 2)
+  col_names <- strsplit(clean_lines[1], ",")[[1]]
+  # Data lines (former line 4+)
+  data_lines <- clean_lines[-1]
+  # Build dataframe WITHOUT any conversion
+  metadata <- read.csv(
+    text = paste(data_lines, collapse = "\n"),
+    header = FALSE,
+    col.names = col_names,
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  # Save clean CSV (no type changes)
+  write.csv(
+    metadata,
+    metadata_path,
+    row.names = FALSE
+  )
+
+  # Cleanup
+  unlink("TEMPESTX_CONTROL_ALL_2024.81x.csv")
+
+  message("Metadata extracted successfully.")
+
+} else {
+
+  message("Metadata already exists.")
+  metadata <- read.csv(metadata_path, stringsAsFactors = FALSE)
+
+}
+
+# fixing TIMESTAMP
+names(metadata)[1] <- "TIMESTAMP"
+
+metadata$TIMESTAMP <- as.POSIXct(
+  metadata$TIMESTAMP,
+  format = "%Y-%m-%d %H:%M:%S",
+  tz = "UTC"
+)
+
+metadata$TIMESTAMP_START <- as.POSIXct(
+  as.character(metadata$TIMESTAMP_START),
+  format = "%Y%m%d%H%M%S",
+  tz = "UTC"
+)
+
+metadata$DATE<-as.Date(metadata$TIMESTAMP_START)
+
+# assuming this was a 60sec incubation. RETURN HERE TO FIX - Need to be checked in the multiplexer program
+colnames(metadata) <- make.unique(colnames(metadata))
+metadata_match <- metadata %>%
+  mutate(
+    obs_length = 30,               
+    metadat_row = row_number()     
+  )
+
+```
+
+## Pulling in raw data
+
+```{r}
+
+zip_file <- "CONTROL.zip"
+
+# Temporary directory
+tmp_dir <- tempdir()
+
+# Extract all files from ZIP
+unzip(zip_file, exdir = tmp_dir)
+
+# List LI-7810 data files
+file.list <- list.files(
+  tmp_dir,
+  pattern = "\\.(dat|txt)$",
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+# Read all LI-7810 files
+alldat_list <- lapply(file.list, ffi_read_LI7810)
+
+# Combine into a single data.table
+alldat <- rbindlist(alldat_list, fill = TRUE)
+
+#selecting relevant columns
+alldat_filtered<-alldat%>%dplyr::select(TIMESTAMP,SN,CH4,CO2)
+
+#saving all licor data found in the control folders
+saveRDS(alldat_filtered, file = "alldat_filtered_control.rds")
+
+```
+
+## Matching metadata and raw data
+
+```{r}
+
+### ERROR HERE 
+
+# start_timestamps overlaps: 
+
+# need to check if all of the control measurements were taken with the same licor SN 
+
+
+# Match metadata to LI-7810 concentration data
+alldat_matched <- alldat_filtered %>%
+  mutate(
+    metadat_row = ffi_metadata_match(
+      data_timestamps = TIMESTAMP,
+      start_dates     = metadata_match$TIMESTAMP_START,
+      start_times     = format(metadata_match$TIMESTAMP_START, "%H:%M:%S"),
+      obs_lengths     = metadata_match$obs_length   
+    )
+  )
+
+
+# Join metadata fields onto concentration data
+alldat_matched <- alldat_matched %>%
+  left_join(
+    metadata_match,
+    by = "metadat_row"
+  )
+```
