@@ -12,6 +12,8 @@ output:
 2. Separate 8100 file into each flux 
 3. Extract metadata from each flux file into a metadata sheet
 
+##Need to figure out how to incorporate the 8100 error log (remove those fluxes?)
+
 ##Setup: 
 ```{r Setup}
 library(dplyr)
