@@ -27,27 +27,38 @@ library(hms)
 ## Pull in Raw Datafiles
 ```{r, echo = FALSE}
 
-# Create a temporary directory
-tmp_dir <- tempdir()
+# Create temporary download folder
+tmp_dir <- file.path(tempdir(), "pulse_downloads")
 
-# Get list of files inside the zip
-#zip_contents <- unzip("7810_data/concentrations/Test_FW_Autochamber_Data.zip", list = TRUE)
-zip_contents <- unzip(here::here("8100_data", "Autochamber_DataDownload_20260604.zip"), list = TRUE)
-
-# Keep only 8100 files from freshwater
-CO2_files <- zip_contents$Name[
-  grepl("data$", zip_contents$Name, ignore.case = TRUE)& #8100 files
-  grepl("TG10", zip_contents$Name, ignore.case = TRUE)] #Freshwater autochamber test
-
-# CO2_files
-
-# Extract the 8100 files
-unzip(
-  here::here("8100_data", "Autochamber_DataDownload_20260604.zip"),
-  #"7810_data/concentrations/Test_FW_Autochamber_Data.zip",
-  files = CO2_files,
-  exdir = tmp_dir
+dir.create(
+  tmp_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
 )
+
+# Confirm it exists
+dir.exists(tmp_dir)
+
+#link directory to google drive location - ####CHANGE to the download folder####
+target_folder <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
+
+#filter to necessary files
+files_pulse <- drive_ls(
+  path = target_folder,
+  recursive = TRUE,
+  pattern = "TG10.*data")
+
+#download files to local drive
+lapply(seq_len(nrow(files_pulse)), function(i) {
+  
+  drive_download(
+    file = files_pulse$id[i],
+    path = file.path(tmp_dir, files_pulse$name[i]),
+    overwrite = TRUE
+  )
+  
+})
+
 
 # List extracted 8100 files (full paths)
 file.list <- list.files(
@@ -57,7 +68,8 @@ file.list <- list.files(
   recursive = TRUE
 )
 
-head(file.list)
+(file.list)
+
 
 #Read in all the datafiles 
 
@@ -67,11 +79,11 @@ head(file.list)
 ctrl_file <- file.list[grepl("TG10-01712", file.list)]
 alldat_ctrl <- ffi_read_LI7810(ctrl_file)
 
-fw_file <- file.list[grepl("TG10-01725", file.list)]
-alldat_fw <- ffi_read_LI7810(fw_file)
+fresh_file <- file.list[grepl("TG10-01725", file.list)]
+alldat_fresh <- ffi_read_LI7810(fresh_file)
 
-sw_file <- file.list[grepl("TG10-01746", file.list)]
-alldat_sw <- ffi_read_LI7810(sw_file)
+salt_file <- file.list[grepl("TG10-01746", file.list)]
+alldat_salt <- ffi_read_LI7810(salt_file)
 
 
 #combine all the files into one 
@@ -86,9 +98,12 @@ alldat_sw <- ffi_read_LI7810(sw_file)
 ## Read in  metadata file and separate by plot
 ```{r, echo = FALSE, message=FALSE}
 
+##Metadata only goes till 2026-06-04 10:00:12
+
+
 #read in metadatfile
 #md <- "Processed_Data/COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed.csv"
-md <- (here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_20260404.csv"))
+md <- (here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_20260604.csv"))
 
 #metadat <- read_excel(md)
 metadat <- read.csv(md) 
@@ -111,23 +126,23 @@ ctrl_metadat <- metadat %>%
     unique_ID = paste("Collar", label, start_time, sep = "_"), 
     Vtotal_m3 = Vtotal/(100^3)) 
 
-#make some changes to the start times??? 
+#make some changes to the start times
 ctrl_metadat <- ctrl_metadat %>%
   mutate(Time = as_hms(Time)) %>%
   mutate(
-    Time = if_else(label %in% c(15, 16),
+    Time = if_else(label %in% c(15, 16, 49),
       Time - 10,
       Time) ) %>%
   mutate(Time = as.character(Time)) %>%
   mutate(total_seconds = as.numeric(total_seconds)) %>%
-  mutate(total_seconds = if_else(label %in% c(15, 16),
+  mutate(total_seconds = if_else(label %in% c(15, 16, 49),
       total_seconds - 30,
       total_seconds) )
 
 ### Add a flag here for times that are changed 
 
 #freshwater metadata 
-fw_metadat <- metadat %>%
+fresh_metadat <- metadat %>%
   filter(Plot == "Fresh") %>%
   mutate(
     # Ensure it's a date-time object
@@ -143,7 +158,7 @@ fw_metadat <- metadat %>%
     Vtotal_m3 = Vtotal/(100^3)) 
 
 #saltwater metadata 
-sw_metadat <- metadat %>%
+salt_metadat <- metadat %>%
   filter(Plot == "Salt") %>%
   mutate(
     # Ensure it's a date-time object
@@ -187,11 +202,11 @@ ctrl_metadat$metadat_row <- seq_len(nrow(ctrl_metadat))
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
-#remove the rows that don't match to metadata 
+#remove the rows that don't match to metadata
 alldat_ctrl <- alldat_ctrl %>%
 filter(!is.na(metadat_row))
 
-#can remove any row that have NA's in the CO2 column 
+#can remove any row that have NA's in the CO2 column
 alldat_ctrl <- alldat_ctrl %>%
 filter(!is.na(CO2))
 
@@ -203,37 +218,36 @@ filter(!is.na(CO2))
 ## Match Fresh metadata to raw data
 ```{r, echo = FALSE}
 
-fresh_alldat <- alldat_fw
+fresh_alldat <- alldat_fresh
 
 #match the metadata to the concentration data 
 fresh_alldat$metadat_row <- ffi_metadata_match(
   data_timestamps = fresh_alldat$TIMESTAMP,
-  start_dates = fw_metadat$Date,
-  start_times = fw_metadat$Time,
-  obs_lengths = fw_metadat$total_seconds) 
+  start_dates = fresh_metadat$Date,
+  start_times = fresh_metadat$Time,
+  obs_lengths = fresh_metadat$total_seconds) 
 # head(alldat)
 
 #Set plot, temp, volume, etc. here 
-fresh_alldat$Plot <- fw_metadat$unique_ID[fresh_alldat$metadat_row]
-fresh_alldat$Volume <- fw_metadat$Vtotal_m3[fresh_alldat$metadat_row]
-fresh_alldat$final_temp <- fw_metadat$Tcham[fresh_alldat$metadat_row] #from 8100 file
-fresh_alldat$V2_avg <- fw_metadat$V2_avg[fresh_alldat$metadat_row] 
-fresh_alldat$V3_avg <- fw_metadat$V3_avg[fresh_alldat$metadat_row] 
-fresh_alldat$V4_avg <- fw_metadat$V4_avg[fresh_alldat$metadat_row] 
+fresh_alldat$Plot <- fresh_metadat$unique_ID[fresh_alldat$metadat_row]
+fresh_alldat$Volume <- fresh_metadat$Vtotal_m3[fresh_alldat$metadat_row]
+fresh_alldat$final_temp <- fresh_metadat$Tcham[fresh_alldat$metadat_row] #from 8100 file
+fresh_alldat$V2_avg <- fresh_metadat$V2_avg[fresh_alldat$metadat_row] 
+fresh_alldat$V3_avg <- fresh_metadat$V3_avg[fresh_alldat$metadat_row] 
+fresh_alldat$V4_avg <- fresh_metadat$V4_avg[fresh_alldat$metadat_row] 
 
-fw_metadat$metadat_row <- seq_len(nrow(fw_metadat))
+fresh_metadat$metadat_row <- seq_len(nrow(fresh_metadat))
 
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
-#remove the rows that don't match to metadata 
+#remove the rows that don't match to metadata
 fresh_alldat <- fresh_alldat %>%
 filter(!is.na(metadat_row))
 
-#can remove any row that have NA's in the CO2 column 
+#can remove any row that have NA's in the CO2 column
 fresh_alldat <- fresh_alldat %>%
 filter(!is.na(CO2))
-
 
 ```
 
@@ -243,8 +257,7 @@ filter(!is.na(CO2))
 ## Match Salt metadata to raw data
 ```{r, echo = FALSE}
 
-#
-salt_alldat <- alldat
+salt_alldat <- alldat_salt
 
 #match the metadata to the concentration data 
 salt_alldat$metadat_row <- ffi_metadata_match(
@@ -281,9 +294,7 @@ filter(!is.na(CO2))
 ## Combine all the matched data back into one dataframe 
 ```{r}
 
-alldat <-  alldat_ctrl #bind_rows(ctrl_alldat, fresh_alldat, salt_alldat)
-
-
+alldat <-  bind_rows(alldat_ctrl, fresh_alldat, salt_alldat)
 
 ```
 
@@ -449,7 +460,7 @@ for(i in seq_along(plot_pages)) {
 
 #Notes on the bad ones 
 
-##Fluxes that have low R aquared but are okay
+##Fluxes that have low R squared but are okay
 
 
 ##Fluxes to remove: 
@@ -682,7 +693,8 @@ allflux <- cbind(IDs, fluxes)
 allflux$`NA`<- NULL
 allflux$`NA`<- NULL
 
-write.csv(allflux, file="Processed_Data/COMPASS_TEMPESTX_SoilFluxes_7810_CO2_processed.csv")           #Change file name
+#Change file name
+write.csv(allflux, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7810_CO2_processed_20260604.csv"), row.names = FALSE)         
 
 ```
 
