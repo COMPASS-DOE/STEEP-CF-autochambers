@@ -20,6 +20,7 @@ library(purrr)
 library(tibble)
 library(readr)
 library(R.utils)
+library(googledrive)
 ```
 
 ## Pull zipped 81x files into temporary data folder
@@ -28,23 +29,25 @@ library(R.utils)
 # Create a temporary directory
 tmp_dir <- tempdir()
 
-# Get list of files inside the zip
-#zip_contents <- unzip("8100_data/Test_FW_Autochamber_Data.zip", list = TRUE)
-zip_contents <- unzip(here::here("8100_data", "Autochamber_DataDownload_20260604.zip"), list = TRUE)
-#zip_contents <- unzip("8100_data/Autochamber_DataDownload_20260604.zip", list = TRUE)
+#link directory to google drive location - ####CHANGE to the download folder####
+target_folder <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
 
+#filter to necessary files
+files_pulse <- drive_ls(
+  path = target_folder,
+  recursive = TRUE,
+  pattern = "81x$")
 
-# Keep only 8100 files 
-metadat_files <- zip_contents$Name[
-  grepl("81x$", zip_contents$Name, ignore.case = TRUE)]
-
-# Extract the 8100 files
-unzip(
-  here::here("8100_data", "Autochamber_DataDownload_20260604.zip"),
-  #"8100_data/Test_FW_Autochamber_Data.zip",
-  files = metadat_files,
-  exdir = tmp_dir
-)
+#download files to local drive
+lapply(seq_len(nrow(files_pulse)), function(i) {
+  
+  drive_download(
+    file = as_id(files_pulse$id[i]),
+    path = file.path(tmp_dir, files_pulse$name[i]),
+    overwrite = TRUE
+  )
+  
+})
 
 # List extracted 8100 files (full paths)
 file.list <- list.files(
@@ -211,7 +214,7 @@ alldat <- data.table::rbindlist(alldat1, fill = TRUE)
 ```{r}
 
 #collar_metadata <- read.csv("design/collar_map.csv")
-collar_metadata <- read.csv(here::here("design", "collar_map.csv"))
+collar_metadata <- read.csv("collar_map.csv")
 collar_metadata$Collar <- as.character(collar_metadata$Collar)
 
 #add in the new collars that we added with UDel 
@@ -238,15 +241,15 @@ alldat_collars <- alldat %>%
 
 ##Write out parsed 8100 data: 
 ```{r}
-
-folder_name <- "Processed_Data"
-
-if (!dir.exists(folder_name)) {
-  dir.create(folder_name)
-}
+# 
+# folder_name <- "Processed_Data"
+# 
+# if (!dir.exists(folder_name)) {
+#   dir.create(folder_name)
+# }
 
 #export as a csv to the folder that you want 
-write.csv(alldat_collars, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_20260404.csv"), row.names = FALSE)           #Change file name
+write.csv(alldat_collars, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_20260604.csv"), row.names = FALSE)           #Change file name
 
 ```
 
