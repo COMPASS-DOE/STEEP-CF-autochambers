@@ -22,6 +22,7 @@ library(dplyr)
 library(tidyr)
 library(patchwork)
 library(hms)
+library(googledrive)
 ```
 
 ## Pull in Raw Datafiles
@@ -86,13 +87,6 @@ salt_file <- file.list[grepl("TG10-01746", file.list)]
 alldat_salt <- ffi_read_LI7810(salt_file)
 
 
-#combine all the files into one 
-#alldat1 <- lapply(file.list, ffi_read_LI7810)
-#alldat <- data.table::rbindlist(alldat1, fill=TRUE)
-
-#Read in just the first file: 
-#alldat <- ffi_read_LI7810(file.list[2]) #freshwater 
-
 ```
 
 ## Read in  metadata file and separate by plot
@@ -104,7 +98,6 @@ alldat_salt <- ffi_read_LI7810(salt_file)
 md <- (here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_20260604.csv"))
 metadat <- read.csv(md) 
 
-#make some changes to the start times
 metadat_edited <- metadat %>%
   mutate(
     # Ensure it's a date-time object
@@ -123,24 +116,32 @@ metadat_edited <- metadat %>%
   ####Make changes to metadata####
   mutate(Time = as_hms(Time)) %>%
   
-  #Change start time
+  #Change start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
   mutate(
     Time = case_when( 
-    label %in% c(15, 16, 49) ~ Time - 10,
+    label == 15 ~ Time - 10, 
+    label == 16 ~ Time - 10, 
+    label == 49 ~ Time - 10, 
     label == 14 ~ Time - 15, 
     unique_ID == "Collar_13_2026-06-03 15:59:13" ~ Time + 10, 
     TRUE ~ Time) ) %>%
   mutate(Time = as.character(Time)) %>%
   
-  #Change observation length
+  #Change observation length (a regular observation length is 90 seconds)
   mutate(total_seconds = as.numeric(total_seconds)) %>%
   mutate(total_seconds = case_when( 
-      label %in% c(15, 16, 49) ~ total_seconds - 30,
+      label == 15 ~ total_seconds - 30, 
+      label == 16 ~ total_seconds - 30, 
+      label == 49 ~ total_seconds - 30, 
       label == 14 ~ total_seconds - 45, 
       TRUE ~ total_seconds) ) %>% 
 
   #Add a flag here for times that are changed 
-  mutate(flag = if_else(label %in% c(14, 15, 16, 49), "Time changed", NA) )
+  mutate(flag = if_else(label %in% c(15, 16, 49), "Time changed", NA) ) %>% 
+  mutate(flag = if_else(unique_ID %in% c("Collar_13_2026-06-03 15:59:13"), "Time changed", NA) ) %>% 
+
+  #Add a flag here for fluxes that are not usable 
+  mutate(flag = if_else(label %in% c(14), "Flux unusable; need to check chamber in field", flag) )
 
 
 ##Write out edited metadata
@@ -181,6 +182,7 @@ alldat_ctrl$final_temp <- ctrl_metadat$Tcham[alldat_ctrl$metadat_row] #from 8100
 alldat_ctrl$V2_avg <- ctrl_metadat$V2_avg[alldat_ctrl$metadat_row] 
 alldat_ctrl$V3_avg <- ctrl_metadat$V3_avg[alldat_ctrl$metadat_row] 
 alldat_ctrl$V4_avg <- ctrl_metadat$V4_avg[alldat_ctrl$metadat_row] 
+alldat_ctrl$flag <- ctrl_metadat$flag[alldat_ctrl$metadat_row] 
 
 ctrl_metadat$metadat_row <- seq_len(nrow(ctrl_metadat))
 
@@ -220,6 +222,7 @@ fresh_alldat$final_temp <- fresh_metadat$Tcham[fresh_alldat$metadat_row] #from 8
 fresh_alldat$V2_avg <- fresh_metadat$V2_avg[fresh_alldat$metadat_row] 
 fresh_alldat$V3_avg <- fresh_metadat$V3_avg[fresh_alldat$metadat_row] 
 fresh_alldat$V4_avg <- fresh_metadat$V4_avg[fresh_alldat$metadat_row] 
+fresh_alldat$flag <- fresh_alldat$flag[fresh_alldat$metadat_row] 
 
 fresh_metadat$metadat_row <- seq_len(nrow(fresh_metadat))
 
@@ -259,6 +262,7 @@ salt_alldat$final_temp <- salt_metadat$Tcham[salt_alldat$metadat_row] #from 8100
 salt_alldat$V2_avg <- salt_metadat$V2_avg[salt_alldat$metadat_row] 
 salt_alldat$V3_avg <- salt_metadat$V3_avg[salt_alldat$metadat_row] 
 salt_alldat$V4_avg <- salt_metadat$V4_avg[salt_alldat$metadat_row] 
+salt_alldat$flag <- salt_alldat$flag[salt_alldat$metadat_row] 
 
 salt_metadat$metadat_row <- seq_len(nrow(salt_metadat))
 
@@ -667,19 +671,15 @@ colnames(IDs) <- c("NA",  "label", "StartTime")
 allflux <- cbind(IDs, fluxes)
 
 ##Add in notes from metadata - add this in when we fix the fluxes
-# metadat$Notes <- NA
-# metadat_notes <- metadat[, c("label", "Notes")]
-# allflux_notes <- allflux %>% 
-#   left_join(metadat_notes, by=c("label"="label"))
+metadat_notes <- metadat_edited[, c("unique_ID", "flag")]
+allflux_notes <- allflux %>%
+  left_join(metadat_notes, by=c("Plot"="unique_ID"))
 
-#export as a csv to the folder that you want 
-# setwd("S:/Biogeochemistry/COMPASS Synoptics/Samples & Data/Fluxes/Macrophyte GHG Fluxes/Final Data")        #Change wd 
-
-allflux$`NA`<- NULL
-allflux$`NA`<- NULL
+allflux_notes$`NA`<- NULL
+allflux_notes$`NA`<- NULL
 
 #Change file name
-write.csv(allflux, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7810_CO2_processed_20260604.csv"), row.names = FALSE)         
+write.csv(allflux_notes, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7810_CO2_processed_20260604.csv"), row.names = FALSE)         
 
 ```
 
