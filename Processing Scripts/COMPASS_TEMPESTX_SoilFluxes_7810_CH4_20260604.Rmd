@@ -135,6 +135,7 @@ alldat_ctrl$final_temp <- ctrl_metadat$Tcham[alldat_ctrl$metadat_row] #from 8100
 alldat_ctrl$V2_avg <- ctrl_metadat$V2_avg[alldat_ctrl$metadat_row] 
 alldat_ctrl$V3_avg <- ctrl_metadat$V3_avg[alldat_ctrl$metadat_row] 
 alldat_ctrl$V4_avg <- ctrl_metadat$V4_avg[alldat_ctrl$metadat_row] 
+alldat_ctrl$flag <- ctrl_metadat$flag[alldat_ctrl$metadat_row] 
 
 ctrl_metadat$metadat_row <- seq_len(nrow(ctrl_metadat))
 
@@ -174,6 +175,7 @@ fresh_alldat$final_temp <- fresh_metadat$Tcham[fresh_alldat$metadat_row] #from 8
 fresh_alldat$V2_avg <- fresh_metadat$V2_avg[fresh_alldat$metadat_row] 
 fresh_alldat$V3_avg <- fresh_metadat$V3_avg[fresh_alldat$metadat_row] 
 fresh_alldat$V4_avg <- fresh_metadat$V4_avg[fresh_alldat$metadat_row] 
+fresh_alldat$flag <- fresh_metadat$flag[fresh_alldat$metadat_row] 
 
 fresh_metadat$metadat_row <- seq_len(nrow(fresh_metadat))
 
@@ -212,6 +214,7 @@ salt_alldat$final_temp <- salt_metadat$Tcham[salt_alldat$metadat_row] #from 8100
 salt_alldat$V2_avg <- salt_metadat$V2_avg[salt_alldat$metadat_row] 
 salt_alldat$V3_avg <- salt_metadat$V3_avg[salt_alldat$metadat_row] 
 salt_alldat$V4_avg <- salt_metadat$V4_avg[salt_alldat$metadat_row] 
+salt_alldat$flag <- salt_metadat$flag[salt_alldat$metadat_row] 
 
 salt_metadat$metadat_row <- seq_len(nrow(salt_metadat))
 
@@ -591,19 +594,15 @@ colnames(IDs) <- c("NA",  "label", "StartTime")
 allflux <- cbind(IDs, fluxes)
 
 ##Add in notes from metadata - add this in when we fix the fluxes
-# metadat$Notes <- NA
-# metadat_notes <- metadat[, c("label", "Notes")]
-# allflux_notes <- allflux %>% 
-#   left_join(metadat_notes, by=c("label"="label"))
+metadat_notes <- metadat_edited[, c("unique_ID", "flag")]
+allflux_notes <- allflux %>%
+  left_join(metadat_notes, by=c("Plot"="unique_ID"))
 
-#export as a csv to the folder that you want 
-# setwd("S:/Biogeochemistry/COMPASS Synoptics/Samples & Data/Fluxes/Macrophyte GHG Fluxes/Final Data")        #Change wd 
-
-allflux$`NA`<- NULL
-allflux$`NA`<- NULL
+allflux_notes$`NA`<- NULL
+allflux_notes$`NA`<- NULL
 
 #Change file name
-write.csv(allflux, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7810_CH4_processed_20260604.csv"), row.names = FALSE)         
+write.csv(allflux_notes, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7810_CH4_processed_20260604.csv"), row.names = FALSE)         
 
 ```
 
