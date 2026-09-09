@@ -1,0 +1,26 @@
+CO2: 
+Collar_15_2026-06-07 14:03:30 - add 45 sec
+Collar_50_2026-06-07 09:22:31 - add 30 sec
+Collar_14_2026-06-07 10:28:31 - add 15 sec
+Collar_14_2026-06-07 14:00:30 - add 15 sec
+
+Collar_29_2026-06-07 11:32:54 - remove 45 sec 
+Collar_32_2026-06-07 11:19:32 - remove 15 sec 
+
+Collar_50_2026-06-07 16:42:27 - remove, poor flux 
+Collar_51_2026-06-07 11:25:30 - remove, poor flux
+Collar_52_2026-06-07 09:28:34 - remove, poor flux
+Collar_40_2026-06-07 16:40:38 - remove, poor flux 
+
+Collar 14 - add 30 sec, remove 30 sec
+Collar 15 - add 30 sec, remove 30 sec
+Collar 16 - add 30 sec, remove 30 sec
+Collar 49 - add 30 sec, remove 30 sec
+
+Collar_43_2026-06-07 09:34:39 - add 30 sec to start time, remove 30 sec
+
+
+CH4: 
+Collar 13 - add 30 sec, remove 30 sec
+Collar_2_2026-06-07 16:30:31 - remove last 5 seconds
+
