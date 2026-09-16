@@ -1,0 +1,16 @@
+CO2: 
+Collar_16_2026-06-08 05:06:29 - add 30 sec 
+Collar_16_2026-06-08 08:06:28 - add 30 sec 
+Collar 49 - add 30 sec
+Collar 13 - add 30 sec
+Collar 14 - add 30 sec
+Collar 15 - add 30 sec
+Collar 16 - add 30 sec
+Collar 38 - add 30 sec
+
+Collar_29_2026-06-08 09:25:31 - remove
+Collar_29_2026-06-08 10:25:31 - remove
+Collar_29_2026-06-08 11:25:31 - remove
+Collar_30_2026-06-08 08:32:40 - remove
+Collar_50_2026-06-08 09:37:31 - remove 
+

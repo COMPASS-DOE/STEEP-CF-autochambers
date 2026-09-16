@@ -26,3 +26,8 @@ Collar 29 - add 30 sec, remove 30 sec x
 Collar_45_2026-06-07 03:46:43 - add 30 sec, remove 30 sec x
 Collar_52_2026-06-07 14:48:28 - add 15, remove 45 sec
 Collar_45_2026-06-07 16:49:27 - add 30 sec, remove 30 sec
+
+N2O: 
+Collar_16_2026-06-07 11:07:00 - has a huge spike around 45 seconds, add 30 sec
+Increase deadband to 30 sec for N2O
+
