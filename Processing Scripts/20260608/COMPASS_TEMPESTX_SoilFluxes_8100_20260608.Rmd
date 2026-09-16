@@ -1,5 +1,5 @@
 ---
-title: "COMPASS_TEMPESTX_SoilFluxes_8100_20260607"
+title: "COMPASS_TEMPESTX_SoilFluxes_8100_20260608"
 author: "Zoe Read & S. Wilson"
 date: "`r Sys.Date()`"
 output: 
@@ -24,7 +24,7 @@ library(readr)
 library(R.utils)
 library(googledrive)
 
-Date <- "2026-06-07"
+Date <- "2026-06-08"
 
 ```
 
@@ -219,28 +219,12 @@ alldat <- data.table::rbindlist(alldat1, fill = TRUE)
 ```{r}
 
 #collar_metadata <- read.csv("design/collar_map.csv")
-collar_metadata <- read.csv("collar_map.csv")
+collar_metadata <- read.csv("../collar_map.csv")
 collar_metadata$Collar <- as.character(collar_metadata$Collar)
-
-#add in the new collars that we added with UDel 
-new_rows <- data.frame(
-  Collar = as.character(c(49, 50, 51, 52)),
-  Plot = c("Control", "Salt", "Salt", "Salt"),
-  Group = c(NA, NA, NA, NA),
-  Treatment = c("Control", "Control", "Control", "Control"),
-  LI8100A_Port = c(NA, NA, NA, NA)
-)
-
-collar_metadata <- bind_rows(collar_metadata, new_rows)
-
-
 
 alldat_collars <- alldat %>% 
    left_join(collar_metadata, by=c("label"="Collar"))
 
-
-### Probably need to do some cleaning here on the temperature data 
- 
 ```
 
 
