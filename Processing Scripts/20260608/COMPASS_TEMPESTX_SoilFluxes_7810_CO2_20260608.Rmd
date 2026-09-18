@@ -7,6 +7,12 @@ output:
     toc: true
     number_sections: true
 ---
+
+##Suggestions: 
+# May want to develop a function to select the linear portion of fluxes so you don't have to do it manually
+# Set a cutoff for when fluxes are so low they can have a low R2
+
+
 ## Set Up
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -132,8 +138,8 @@ metadat_edited <- metadat %>%
   # unique_ID == "Collar_16_2026-06-08 08:06:28" ~ Time_8100 + 30,
   # label == 49 ~ Time_8100 + 30,
   # TRUE ~ Time_8100) ) %>%
-  # mutate(Time_7810 = hms::as_hms(as.numeric(Time_7810))) %>%
-  # mutate(Time_7810 = as.character(Time_7810)) %>%
+  mutate(Time_7810 = hms::as_hms(as.numeric(Time_7810))) %>%
+  mutate(Time_7810 = as.character(Time_7810)) %>%
 
   # Change observation length (a regular observation length is 90 seconds)
   mutate(total_seconds = 120) %>% 
