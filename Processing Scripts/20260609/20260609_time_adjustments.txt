@@ -1,0 +1,22 @@
+CO2: 
+Collar_41_2026-06-09 15:29:08 - add 15 sec
+Collar_40_2026-06-09 01:41:14 - add 30 sec
+Collar_40_2026-06-09 02:41:13 - add 30 sec
+
+Collar 13 - add 30 sec
+Collar 14 - add 30 sec
+Collar 15 - add 30 sec
+Collar 16 - add 30 sec
+Collar 38 - add 30 sec
+Collar 41 - add 30 sec
+Collar 44 - add 30 sec
+Collar 45 - add 30 sec
+Collar 49 - add 30 sec
+
+Collar_52_2026-06-09 05:48:48 - remove 
+Collar_13_2026-06-09 13:57:31 - remove
+
+CH4: 
+
+
+N2O: left as-is because most are messy and don't want to mess up CO2/CH4 fluxes
