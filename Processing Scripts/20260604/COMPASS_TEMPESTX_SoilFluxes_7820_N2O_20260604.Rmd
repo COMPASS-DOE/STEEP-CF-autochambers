@@ -22,6 +22,7 @@ library(dplyr)
 library(tidyr)
 library(patchwork)
 library(hms)
+library(googledrive)
 ```
 
 ## Pull in Raw Datafiles
@@ -157,7 +158,7 @@ filter(!is.na(N2O))
 ######## FRESHWATER MATCHING ##############
 
 ## Match Fresh metadata to raw data
-```{r, echo = FALSE}
+```{#r, echo = FALSE}
 
 fresh_alldat <- alldat_fresh
 

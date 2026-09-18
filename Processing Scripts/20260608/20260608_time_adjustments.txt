@@ -1,12 +1,20 @@
 CO2: 
-Collar_16_2026-06-08 05:06:29 - add 30 sec 
-Collar_16_2026-06-08 08:06:28 - add 30 sec 
-Collar 49 - add 30 sec
+Collar_43_2026-06-08 03:34:56 - add 30 sec 
 Collar 13 - add 30 sec
 Collar 14 - add 30 sec
 Collar 15 - add 30 sec
 Collar 16 - add 30 sec
 Collar 38 - add 30 sec
+Collar 41 - add 30 sec
+Collar 44 - add 30 sec
+Collar 45 - add 30 sec
+Collar 49 - add 30 sec
+
+Collar_32_2026-06-08 10:34:29 - reduce obs length by 17 sec
+Collar_49_2026-06-08 10:09:29 - reduce obs length by 25 sec
+Collar_49_2026-06-08 18:09:26 - reduce obs length by 30 sec
+Collar_49_2026-06-08 23:09:29 - reduce obs length by 30 sec
+
 
 Collar_29_2026-06-08 09:25:31 - remove
 Collar_29_2026-06-08 10:25:31 - remove
@@ -14,3 +22,8 @@ Collar_29_2026-06-08 11:25:31 - remove
 Collar_30_2026-06-08 08:32:40 - remove
 Collar_50_2026-06-08 09:37:31 - remove 
 
+CH4: 
+Collar_50_2026-06-08 09:37:31 - looks like ebullition, remove
+Collar_50_2026-06-08 19:37:32 - looks like ebullition, remove
+
+N2O: left as-is because most are messy and don't want to mess up CO2/CH4 fluxes

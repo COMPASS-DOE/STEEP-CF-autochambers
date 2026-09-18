@@ -33,6 +33,7 @@ library(purrr)
 library(readr)
 
 Date <- "20260608"
+Date_dashes <- "2026-06-08"
 ```
 
 ## Pull in Raw Datafiles
@@ -122,45 +123,35 @@ metadat_edited <- metadat %>%
   
   ####Make changes to metadata####
   mutate(Time_8100 = as_hms(Time_8100)) %>%
-
-  ####Adjust time from 8100 to 7810 time
-  # mutate(Time_7810 = case_when(
-  #   Plot == "Fresh" ~ Time_7810 + 55, 
-  #   Plot == "Salt" ~ Time_7810 + 59, 
-  #   Plot == "Control" ~ Time_7810 + 40
-  #   ) ) %>% 
   
   # Change start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
   mutate(
-    Time_7810 = Time_8100) %>%  
-  # Time_7810 = case_when(
-  # unique_ID == "Collar_16_2026-06-08 05:06:29" ~ Time_8100 + 30,
-  # unique_ID == "Collar_16_2026-06-08 08:06:28" ~ Time_8100 + 30,
-  # label == 49 ~ Time_8100 + 30,
-  # TRUE ~ Time_8100) ) %>%
+    # Time_7810 = Time_8100) %>%  
+  Time_7810 = case_when(
+  unique_ID == "Collar_43_2026-06-08 03:34:56" ~ Time_8100 + 30,
+  label == 13 ~ Time_8100 + 30,
+  label == 14 ~ Time_8100 + 30,
+  label == 15 ~ Time_8100 + 30,
+  label == 16 ~ Time_8100 + 30,
+  label == 38 ~ Time_8100 + 30,
+  label == 41 ~ Time_8100 + 30,
+  label == 44 ~ Time_8100 + 30,
+  label == 45 ~ Time_8100 + 30,
+  label == 49 ~ Time_8100 + 30,
+  TRUE ~ Time_8100) ) %>%
   mutate(Time_7810 = hms::as_hms(as.numeric(Time_7810))) %>%
   mutate(Time_7810 = as.character(Time_7810)) %>%
 
   # Change observation length (a regular observation length is 90 seconds)
-  mutate(total_seconds = 120) %>% 
+  # mutate(total_seconds = 120) %>% 
   
-  # mutate(total_seconds = case_when(
-  #   unique_ID == "Collar_43_2026-06-07 09:34:39" ~ total_seconds - 30,
-  #   unique_ID == "Collar_29_2026-06-07 11:32:54" ~ total_seconds - 45,
-  #   unique_ID == "Collar_32_2026-06-07 11:19:32" ~ total_seconds - 15,
-  #   unique_ID == "Collar_45_2026-06-07 03:46:43" ~ total_seconds - 30,
-  #   unique_ID == "Collar_52_2026-06-07 14:48:28" ~ total_seconds - 45,
-  #   unique_ID == "Collar_45_2026-06-07 16:49:27" ~ total_seconds - 30,
-  #   unique_ID == "Collar_16_2026-06-07 11:07:00" ~ total_seconds - 50,
-  #   label == 13 ~ total_seconds - 30, 
-  #   label == 14 ~ total_seconds - 30, 
-  #   label == 15 ~ total_seconds - 45, 
-  #   label == 16 ~ total_seconds - 30, 
-  #   label == 29 ~ total_seconds - 30, 
-  #   label == 49 ~ total_seconds - 30, 
-  #   label == 41 ~ total_seconds - 30, 
-  #   label == 51 ~ total_seconds - 15, 
-  #   TRUE ~ total_seconds) ) %>%
+  mutate(total_seconds = case_when(
+    unique_ID == "Collar_32_2026-06-08 10:34:29" ~ total_seconds - 17,
+    unique_ID == "Collar_49_2026-06-08 10:09:29" ~ total_seconds - 25,
+    unique_ID == "Collar_49_2026-06-08 18:09:26" ~ total_seconds - 30,
+    unique_ID == "Collar_49_2026-06-08 23:09:29" ~ total_seconds - 30,
+    label == 14 ~ total_seconds - 30,
+    TRUE ~ total_seconds) ) %>% 
   
 
   #Add a flag here for times that are changed 
@@ -339,7 +330,7 @@ fluxes <- ffi_compute_fluxes(alldat,
                              group_column = "Plot", 
                              time_column = "TIMESTAMP", 
                              gas_column = "CO2_umol_m2", 
-                             dead_band = 60) #, c0_band = 5?
+                             dead_band = 25) #, c0_band = 5?
 # head(fluxes)
 
 #take a look at the fluxes we calculated with R2 
@@ -606,7 +597,7 @@ all_plots <- unique(fluxes$Plot)
 #Loop to run five random plots subset above 
 for(P in all_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:60), ]
+  r1 <- r1[-c(1:25), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
   ylab(expression(paste( CO [2], " (ppm)"))) +
   xlab("Time") + labs(title = P) + 

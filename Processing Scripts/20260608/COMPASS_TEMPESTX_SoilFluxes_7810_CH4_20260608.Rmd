@@ -1,5 +1,5 @@
 ---
-title: "COMPASS_Synoptic_MacrophyteFluxes_2025_CH4_20260607"
+title: "COMPASS_Synoptic_MacrophyteFluxes_2025_CH4_20260608"
 author: "Zoe Read"
 date: "`r Sys.Date()`"
 output: 
@@ -23,7 +23,7 @@ library(tidyr)
 library(patchwork)
 library(hms)
 
-Date <- "20260607"
+Date <- "20260608"
 ```
 
 ## Pull in Raw Datafiles
@@ -91,7 +91,7 @@ alldat_salt <- map(salt_file, ffi_read_LI7810)|>list_rbind()
 ```{r, echo = FALSE, message=FALSE}
 
 #read in metadatfile
-md <- (here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_", Date, ".csv")))
+md <- (here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_edited_", Date, ".csv")))
 metadat <- read.csv(md) 
 
 #make some changes to the start times
@@ -298,6 +298,7 @@ plot_list <- list()
 #Loop to run plots above 
 for(P in tobechecked){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:10), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
   ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -329,7 +330,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in good_sample){ 
   r1 <- subset(alldat, Plot == P)
-  
+  r1 <- r1[-c(1:10), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
   ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -373,6 +374,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in bad_plots){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:10), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
   ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -403,7 +405,7 @@ for(i in seq_along(plot_pages)) {
 
 #Notes on the bad ones 
 
-##Fluxes that have low R aquared but are okay
+##Fluxes that have low R squared but are okay
 
 
 ##Fluxes to remove: 
@@ -416,16 +418,6 @@ for(i in seq_along(plot_pages)) {
 ##Already add notes to metadata for the ones I fixed
 
 ##Add qaqc flags 
-
-#Fluxes that need to be removed
-# remove_flags <- c("MSM_TR_4_202509", "SWH_TR_1_202509", "SWH_TR_2_202509", "MSM_TR_5_202507")
-# fluxes$qaqc_flag <- NA
-# fluxes <- fluxes %>%
-#     mutate(qaqc_flag = ifelse(is.na(qaqc_flag) & Plot %in% remove_flags, "messy flux, remove", qaqc_flag))
-# 
-# #Any other fluxes that had low R squared but are okay otherwise
-# fluxes <- fluxes %>%
-#     mutate(qaqc_flag = ifelse(is.na(qaqc_flag) & Plot %in% bad_plots, "low r squared, but checked and flux is okay", qaqc_flag))
 
 ###########################
 
@@ -441,6 +433,7 @@ tail_plots <- unique(tails$Plot)
 #Loop to run five random plots subset above 
 for(P in tail_plots){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:10), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
   ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -487,7 +480,8 @@ plot_list <- list()
 
 #Loop to run five random plots subset above 
 for(P in all_plots){ 
- r1 <- subset(alldat, Plot == P)
+  r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:10), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
   ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -595,7 +589,7 @@ allflux_notes$`NA`<- NULL
 allflux_notes$`NA`<- NULL
 
 #Change file name
-write.csv(allflux_notes, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7810_CH4_processed_20260607.csv"), row.names = FALSE)         
+write.csv(allflux_notes, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_7810_CH4_processed_", Date, ".csv")), row.names = FALSE)         
 
 ```
 
