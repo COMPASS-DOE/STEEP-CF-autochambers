@@ -91,7 +91,7 @@ alldat_salt <- map(salt_file, ffi_read_LI7810)|>list_rbind()
 ```{r, echo = FALSE, message=FALSE}
 
 #read in metadatfile
-md <- (here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_", Date, ".csv")))
+md <- (here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_edited_", Date, ".csv")))
 metadat <- read.csv(md) 
 
 #make some changes to the start times

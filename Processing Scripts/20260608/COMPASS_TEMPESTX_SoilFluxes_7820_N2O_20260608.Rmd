@@ -1,5 +1,5 @@
 ---
-title: "COMPASS_Synoptic_MacrophyteFluxes_2025_N2O_20260607"
+title: "COMPASS_Synoptic_MacrophyteFluxes_2025_N2O_20260608"
 author: "Zoe Read"
 date: "`r Sys.Date()`"
 output: 
@@ -26,9 +26,9 @@ library(googledrive)
 library(purrr)
 library(readr)
 
-Date <- "20260607"
+Date <- "20260608"
 
-Notes <- "For control: 53 entries had no timestamp matches!"
+Notes <- ""
 
 ```
 
@@ -303,6 +303,7 @@ plot_list <- list()
 #Loop to run plots above 
 for(P in tobechecked){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
   ylab(expression(paste( N[2], "O (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -334,6 +335,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in good_sample){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:30), ]
   
   p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
   ylab(expression(paste( N[2], "O (ppb)"))) +
@@ -378,6 +380,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in bad_plots){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
   ylab(expression(paste( N[2], "O (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -408,7 +411,7 @@ for(i in seq_along(plot_pages)) {
 
 #Notes on the bad ones 
 
-##Fluxes that have low R aquared but are okay
+##Fluxes that have low R squared but are okay
 
 
 ##Fluxes to remove: 
@@ -436,6 +439,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in tail_plots){ 
   r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
   ylab(expression(paste( N[2], "O (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -483,6 +487,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in all_plots){ 
  r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
   ylab(expression(paste( N[2], "O (ppb)"))) +
   xlab("Time") + labs(title = P) + 
@@ -590,7 +595,7 @@ allflux_notes$`NA`<- NULL
 allflux_notes$`NA`<- NULL
 
 #Change file name
-write.csv(allflux_notes, file=here::here("Processed_Data", "COMPASS_TEMPESTX_SoilFluxes_7820_N2O_processed_20260604.csv"), row.names = FALSE)  
+write.csv(allflux_notes, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_7820_N2O_processed_", Date, ".csv")), row.names = FALSE)         
 
 ```
 
