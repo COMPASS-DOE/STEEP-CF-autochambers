@@ -1,5 +1,5 @@
 ---
-title: "COMPASS_Synoptic_MacrophyteFluxes_2025_N2O_20260608"
+title: "COMPASS_Synoptic_MacrophyteFluxes_2025_CH4_20260609"
 author: "Zoe Read"
 date: "`r Sys.Date()`"
 output: 
@@ -26,17 +26,14 @@ library(googledrive)
 library(purrr)
 library(readr)
 
-Date <- "20260608"
-
-Notes <- ""
-
+Date <- "20260609"
 ```
 
 ## Pull in Raw Datafiles
 ```{r, echo = FALSE}
 
 # Create temporary download folder
-tmp_dir <- file.path(tempdir(), "pulse_downloads_n2o")
+tmp_dir <- file.path(tempdir(), "pulse_downloads_ch4")
 
 dir.create(
   tmp_dir,
@@ -54,7 +51,7 @@ target_folder <- "https://drive.google.com/drive/folders/12vQiSxn6l4wgJ5tpSI2TNH
 files_pulse <- drive_ls(
   path = target_folder,
   recursive = TRUE,
-  pattern = "TG20.*data")
+  pattern = "TG10.*data")
 
 #download files to local drive
 lapply(seq_len(nrow(files_pulse)), function(i) {
@@ -67,10 +64,10 @@ lapply(seq_len(nrow(files_pulse)), function(i) {
   
 })
 
-# List extracted 7820 files (full paths)
+# List extracted 7810 files (full paths)
 file.list <- list.files(
   path = tmp_dir,
-  pattern = "TG20.*data$",
+  pattern = "TG10.*\\.data$",
   full.names = TRUE,
   recursive = TRUE
 )
@@ -79,17 +76,17 @@ head(file.list)
 
 #Read in all the datafiles 
 
-#Control 7810: TG20-01376
-#Saltwater 7810: TG20-01746
-#Freshwater 7810: TG20-01182
-ctrl_file <- file.list[grepl("TG20-01376", file.list)]
-alldat_ctrl <- map(ctrl_file, ffi_read_LI7820)|>list_rbind()
+#Control 7810: TG10-01712
+#Saltwater 7810: TG10-01746
+#Freshwater 7810: TG10-01725
+ctrl_file <- file.list[grepl("TG10-01712", file.list)]
+alldat_ctrl <- map(ctrl_file, ffi_read_LI7810)|>list_rbind()
 
-fresh_file <- file.list[grepl("TG20-01746", file.list)]
-alldat_fresh <- map(fresh_file, ffi_read_LI7820)|>list_rbind()
+fresh_file <- file.list[grepl("TG10-01725", file.list)]
+alldat_fresh <- map(fresh_file, ffi_read_LI7810)|>list_rbind()
 
-salt_file <- file.list[grepl("TG20-01182", file.list)]
-alldat_salt <- map(salt_file, ffi_read_LI7820)|>list_rbind()
+salt_file <- file.list[grepl("TG10-01746", file.list)]
+alldat_salt <- map(salt_file, ffi_read_LI7810)|>list_rbind()
 
 ```
 
@@ -151,7 +148,7 @@ filter(!is.na(metadat_row))
 
 #can remove any row that have NA's in the CO2 column
 alldat_ctrl <- alldat_ctrl %>%
-filter(!is.na(N2O))
+filter(!is.na(CH4))
 
 ```
 
@@ -190,8 +187,8 @@ fresh_alldat <- fresh_alldat %>%
 filter(!is.na(metadat_row))
 
 #can remove any row that have NA's in the CO2 column
-# fresh_alldat <- fresh_alldat %>%
-# filter(!is.na(N2O))
+fresh_alldat <- fresh_alldat %>%
+filter(!is.na(CH4))
 
 ```
 
@@ -230,33 +227,34 @@ filter(!is.na(metadat_row))
 
 #can remove any row that have NA's in the CO2 column 
 salt_alldat <- salt_alldat %>%
-filter(!is.na(N2O))
+filter(!is.na(CH4))
 
 ```
 
 ## Combine all the matched data back into one dataframe 
 ```{r}
 
-alldat <-  bind_rows(alldat_ctrl, fresh_alldat, salt_alldat) #
+alldat <-  bind_rows(alldat_ctrl, fresh_alldat, salt_alldat)
 
 ```
+
 
 ## Calculate fluxes 
 ```{r, echo = FALSE, message = FALSE, warning=FALSE}
 #change the units
-alldat$N2O_nmol <- ffi_ppb_to_nmol(alldat$N2O, 
+alldat$CH4_nmol <- ffi_ppb_to_nmol(alldat$CH4, 
                                    volume = alldat$Volume # m3
                                    )    # degrees C
 #> Assuming atm = 101325 Pa
 #> Using R = 8.31446261815324 m3 Pa K-1 mol-1
 
-alldat$N2O_nmol_m2 <- alldat$N2O_nmol / 0.16
+alldat$CH4_nmol_m2 <- alldat$CH4_nmol / 0.16
 
 fluxes <- ffi_compute_fluxes(alldat,
                              group_column = "Plot", 
                              time_column = "TIMESTAMP", 
-                             gas_column = "N2O_nmol_m2", 
-                             dead_band = 30) #, c0_band = 5?
+                             gas_column = "CH4_nmol_m2", 
+                             dead_band = 10) #, c0_band = 5?
 # head(fluxes)
 
 #take a look at the fluxes we calculated with R2 
@@ -266,7 +264,7 @@ ggplot(fluxes, aes(Plot, lin_flux.estimate, color = lin_r.squared)) +
                    ymax = lin_flux.estimate+ lin_flux.std.error)) +
   scale_color_gradientn(colours = c("darkred",  "red", "white","lightblue", "darkblue"),
                         values = c(0, 0.5, 0.6, 0.7, 1)) +
-  ylab("N2O flux (nmol/m2/s)")+ 
+  ylab("CH4 flux (nmol/m2/s)")+ 
   theme(axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank()) 
@@ -275,7 +273,7 @@ ggplot(fluxes, aes(Plot, lin_flux.estimate, color = lin_r.squared)) +
 fluxes_good <- as.data.frame(subset(fluxes, lin_r.squared >= .90, select = Plot:TIMESTAMP_max))
 fluxes_weird <- as.data.frame(subset(fluxes, lin_r.squared < .90, select = Plot:TIMESTAMP_max))
 
-#negative N2O fluxes
+#negative CH4 fluxes
 fluxes_negative <- as.data.frame(subset(fluxes,  lin_flux.estimate < 0, select = Plot:TIMESTAMP_max))
 
 #find fluxes that represent the first and fourth quartile of the data 
@@ -303,13 +301,13 @@ plot_list <- list()
 #Loop to run plots above 
 for(P in tobechecked){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:30), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
-  ylab(expression(paste( N[2], "O (ppb)"))) +
+  r1 <- r1[-c(1:10), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
-  plot_list[[length(plot_list) + 1]] <- p1
+  print(p1)
 }
 
 
@@ -335,10 +333,9 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in good_sample){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:30), ]
-  
-  p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
-  ylab(expression(paste( N[2], "O (ppb)"))) +
+  r1 <- r1[-c(1:10), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -380,9 +377,9 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in bad_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:30), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
-  ylab(expression(paste( N[2], "O (ppb)"))) +
+  r1 <- r1[-c(1:10), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -421,6 +418,9 @@ for(i in seq_along(plot_pages)) {
 ##Fluxes to change: 
 
 
+##Already add notes to metadata for the ones I fixed
+
+##Add qaqc flags 
 
 ###########################
 
@@ -433,15 +433,12 @@ for(i in seq_along(plot_pages)) {
 ### pull out fluxes in the 5% and 95% tails to look at really high and really low 
 tail_plots <- unique(tails$Plot)
 
-#Empty list to store plots
-plot_list <- list()
-
 #Loop to run five random plots subset above 
 for(P in tail_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:30), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
-  ylab(expression(paste( N[2], "O (ppb)"))) +
+  r1 <- r1[-c(1:10), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -486,10 +483,10 @@ plot_list <- list()
 
 #Loop to run five random plots subset above 
 for(P in all_plots){ 
- r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:30), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, N2O)) + geom_point() + theme_classic() +
-  ylab(expression(paste( N[2], "O (ppb)"))) +
+  r1 <- subset(alldat, Plot == P)
+  r1 <- r1[-c(1:10), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -527,8 +524,8 @@ p1 <- ggplot(fluxes, aes(lin_flux.estimate, rob_flux.estimate, color = Plot)) +
   geom_point(size=4) + geom_abline() + 
   theme_classic() + 
   labs(title = "A") + 
-  ylab(expression(paste( N[2], "O Flux (nmol m"^-2* " s"^-1*") Robust Method"))) +
-  xlab(expression(paste( N[2], "O Flux (nmol m"^-2* " s"^-1*") Linear Method"))) +
+  ylab(expression(paste( CH [4], " Flux (nmol m"^-2* " s"^-1*") Robust Method"))) +
+  xlab(expression(paste( CH [4], " Flux (nmol m"^-2* " s"^-1*") Linear Method"))) +
   guides(color = guide_legend(title = "Plot")) +
   theme(legend.position="none") +
   theme(axis.title.x = element_text(size=12), axis.text = element_text(size=12),
@@ -558,8 +555,8 @@ p3 <- ggplot(fluxes, aes(lin_flux.estimate, HM81_flux.estimate, color = lin_r.sq
   theme_classic() + 
   #xlim(0,50) + #ylim(0,50) +
   labs(title = "C") + 
-  ylab(expression(paste( N[2], "O Flux (nmol m"^-2* " s"^-1*") HM1981 Method"))) +
-  xlab(expression(paste( N[2], "O Flux (nmol m"^-2* " s"^-1*") Linear Method"))) +
+  ylab(expression(paste( CH [4], " Flux (nmol m"^-2* " s"^-1*") HM1981 Method"))) +
+  xlab(expression(paste( CH [4], " Flux (nmol m"^-2* " s"^-1*") Linear Method"))) +
   guides(color = guide_legend(title = "Plot")) + 
   theme(legend.position="right") +
   theme(axis.title.x = element_text(size=12), axis.text = element_text(size=12),
@@ -595,7 +592,7 @@ allflux_notes$`NA`<- NULL
 allflux_notes$`NA`<- NULL
 
 #Change file name
-write.csv(allflux_notes, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_7820_N2O_processed_", Date, ".csv")), row.names = FALSE)         
+write.csv(allflux_notes, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_7810_CH4_processed_", Date, ".csv")), row.names = FALSE)         
 
 ```
 

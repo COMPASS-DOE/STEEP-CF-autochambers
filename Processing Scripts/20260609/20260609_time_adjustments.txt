@@ -2,6 +2,7 @@ CO2:
 Collar_41_2026-06-09 15:29:08 - add 15 sec
 Collar_40_2026-06-09 01:41:14 - add 30 sec
 Collar_40_2026-06-09 02:41:13 - add 30 sec
+Collar_41_2026-06-09 15:29:08 - remove 30 sec from obs length
 
 Collar 13 - add 30 sec
 Collar 14 - add 30 sec
@@ -15,6 +16,8 @@ Collar 49 - add 30 sec
 
 Collar_52_2026-06-09 05:48:48 - remove 
 Collar_13_2026-06-09 13:57:31 - remove
+Collar_45_2026-06-09 03:47:13 - remove
+
 
 CH4: 
 
