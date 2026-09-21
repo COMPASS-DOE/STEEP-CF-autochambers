@@ -130,7 +130,6 @@ metadat_edited <- metadat %>%
   unique_ID == "Collar_41_2026-06-09 15:29:08" ~ Time_8100 + 15,
   unique_ID == "Collar_40_2026-06-09 01:41:14" ~ Time_8100 + 30,
   unique_ID == "Collar_40_2026-06-09 02:41:13" ~ Time_8100 + 30,
-  unique_ID == "Collar_45_2026-06-09 03:47:13" ~ Time_8100 + 30,
   label == 13 ~ Time_8100 + 30,
   label == 14 ~ Time_8100 + 30,
   label == 15 ~ Time_8100 + 30,
@@ -149,6 +148,9 @@ metadat_edited <- metadat %>%
   mutate(total_seconds = case_when(
     unique_ID == "Collar_41_2026-06-09 15:29:08" ~ total_seconds - 30,
     label == 14 ~ total_seconds - 30,
+    label == 41 ~ total_seconds - 30,
+    label == 43 ~ total_seconds - 30,
+    label == 44 ~ total_seconds - 30,
     TRUE ~ total_seconds) ) %>% 
   
 
@@ -162,7 +164,8 @@ metadat_edited <- metadat %>%
   #Add a flag here for fluxes that are not usable
   mutate(flag = if_else(unique_ID %in% c(
     "Collar_52_2026-06-09 05:48:48", 
-    "Collar_13_2026-06-09 13:57:31"),
+    "Collar_13_2026-06-09 13:57:31",  
+    "Collar_45_2026-06-09 03:47:13"),
     "Flux unusable, remove", flag) )
 
 
