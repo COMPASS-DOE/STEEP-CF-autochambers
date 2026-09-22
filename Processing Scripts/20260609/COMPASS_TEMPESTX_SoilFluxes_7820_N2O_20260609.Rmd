@@ -127,7 +127,7 @@ salt_metadat <- metadat_edited %>%
 alldat_ctrl$metadat_row <- ffi_metadata_match(
   data_timestamps = alldat_ctrl$TIMESTAMP,
   start_dates = ctrl_metadat$Date,
-  start_times = ctrl_metadat$Time_7810,
+  start_times = ctrl_metadat$Time_7820,
   obs_lengths = ctrl_metadat$total_seconds) 
 # head(alldat)
 
@@ -167,7 +167,7 @@ fresh_alldat <- alldat_fresh
 fresh_alldat$metadat_row <- ffi_metadata_match(
   data_timestamps = fresh_alldat$TIMESTAMP,
   start_dates = fresh_metadat$Date,
-  start_times = fresh_metadat$Time_7810,
+  start_times = fresh_metadat$Time_7820,
   obs_lengths = fresh_metadat$total_seconds) 
 # head(alldat)
 
@@ -206,7 +206,7 @@ salt_alldat <- alldat_salt
 salt_alldat$metadat_row <- ffi_metadata_match(
   data_timestamps = salt_alldat$TIMESTAMP,
   start_dates = salt_metadat$Date,
-  start_times = salt_metadat$Time_7810,
+  start_times = salt_metadat$Time_7820,
   obs_lengths = salt_metadat$total_seconds) 
 # head(alldat)
 

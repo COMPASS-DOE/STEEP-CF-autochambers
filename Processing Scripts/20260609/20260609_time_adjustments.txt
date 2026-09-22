@@ -22,4 +22,4 @@ Collar_45_2026-06-09 03:47:13 - remove
 CH4: 
 
 
-N2O: left as-is because most are messy and don't want to mess up CO2/CH4 fluxes
+N2O: if the 7820 getting air the same time as the 7820? It seems to be earlier, adjusted some of the times and used 7820 time
