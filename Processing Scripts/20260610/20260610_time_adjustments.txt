@@ -6,13 +6,14 @@ Collar 13 - add 30 sec
 Collar 14 - add 30 sec
 Collar 15 - add 30 sec
 Collar 16 - add 30 sec
+Collar 29 - add 30 sec
 Collar 40 - add 30 sec
 Collar 43 - add 15 sec
 Collar 44 - add 15 sec
 Collar 49 - add 15 sec
 
 Collar_13_2026-06-10 13:57:31 - remove
-
+Collar_14_2026-06-10 12:00:30 - remove
 
 CH4: 
 
