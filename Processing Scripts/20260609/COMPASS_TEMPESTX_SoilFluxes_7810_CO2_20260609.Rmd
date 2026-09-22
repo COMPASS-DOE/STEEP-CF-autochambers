@@ -125,7 +125,6 @@ metadat_edited <- metadat %>%
   
   # Change start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
   mutate(
-    # Time_7810 = Time_8100) %>%  
   Time_7810 = case_when(
   unique_ID == "Collar_41_2026-06-09 15:29:08" ~ Time_8100 + 15,
   unique_ID == "Collar_40_2026-06-09 01:41:14" ~ Time_8100 + 30,
@@ -146,17 +145,34 @@ metadat_edited <- metadat %>%
 
   # Change observation length (a regular observation length is 90 seconds)
   mutate(total_seconds = case_when(
-    unique_ID == "Collar_41_2026-06-09 15:29:08" ~ total_seconds - 30,
+    # unique_ID == "Collar_41_2026-06-09 15:29:08" ~ total_seconds - 30,
     label == 14 ~ total_seconds - 30,
+    label == 40 ~ total_seconds - 30,
     label == 41 ~ total_seconds - 30,
+    label == 42 ~ total_seconds - 30,
     label == 43 ~ total_seconds - 30,
     label == 44 ~ total_seconds - 30,
+    label == 45 ~ total_seconds - 30,
     TRUE ~ total_seconds) ) %>% 
   
-
+# Change 7820 start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
+  mutate(
+  Time_7820 = 
+  case_when(
+  label == 13 ~ Time_8100 + 30,
+  label == 14 ~ Time_8100 + 30,
+  label == 15 ~ Time_8100 + 30,
+  label == 16 ~ Time_8100 + 30,
+  label == 38 ~ Time_8100 - 30,
+  label == 41 ~ Time_8100 - 30,
+  TRUE ~ Time_8100) ) %>%
+  mutate(Time_7820 = hms::as_hms(as.numeric(Time_7820))) %>%
+  mutate(Time_7820 = as.character(Time_7820)) %>%
+  
   #Add a flag here for times that are changed 
   mutate(flag = case_when(
     as_hms(Time_8100) != as_hms(Time_7810) ~ "Time changed", 
+    as_hms(Time_8100) != as_hms(Time_7820) ~ "Time changed", 
     as.numeric(ms(obs_length)) != total_seconds ~ "Time changed", 
     TRUE ~ NA_character_) 
   ) %>%
