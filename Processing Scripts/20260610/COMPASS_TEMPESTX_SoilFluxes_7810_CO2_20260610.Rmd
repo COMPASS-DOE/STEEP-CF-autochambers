@@ -143,7 +143,9 @@ metadat_edited <- metadat %>%
   label == 15 ~ Time_8100 + 30,
   label == 16 ~ Time_8100 + 30,
   label == 29 ~ Time_8100 + 30,
+  label == 38 ~ Time_8100 + 30,
   label == 40 ~ Time_8100 + 30,
+  label == 41 ~ Time_8100 + 30,
   label == 43 ~ Time_8100 + 15,
   label == 44 ~ Time_8100 + 15,
   label == 49 ~ Time_8100 + 15,  
@@ -153,16 +155,12 @@ metadat_edited <- metadat %>%
   mutate(Time_7810 = as.character(Time_7810)) %>%
 
   # Change observation length (a regular observation length is 90 seconds)
-  # mutate(total_seconds = case_when(
-  #   # unique_ID == "Collar_41_2026-06-09 15:29:08" ~ total_seconds - 30,
-  #   label == 14 ~ total_seconds - 30,
-  #   label == 40 ~ total_seconds - 30,
-  #   label == 41 ~ total_seconds - 30,
-  #   label == 42 ~ total_seconds - 30,
-  #   label == 43 ~ total_seconds - 30,
-  #   label == 44 ~ total_seconds - 30,
-  #   label == 45 ~ total_seconds - 30,
-  #   TRUE ~ total_seconds) ) %>% 
+  mutate(total_seconds = case_when(
+    # unique_ID == "Collar_41_2026-06-09 15:29:08" ~ total_seconds - 30,
+    label == 14 ~ total_seconds - 30,
+    label == 29 ~ total_seconds - 30,
+    label == 40 ~ total_seconds - 30,
+    TRUE ~ total_seconds) ) %>%
   
 # Change 7820 start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
   mutate(
@@ -470,7 +468,7 @@ fluxes <- ffi_compute_fluxes(alldat,
                              group_column = "Plot", 
                              time_column = "TIMESTAMP", 
                              gas_column = "CO2_umol_m2", 
-                             dead_band = 25) #, c0_band = 5?
+                             dead_band = 30) #, c0_band = 5?
 # head(fluxes)
 
 #take a look at the fluxes we calculated with R2 
@@ -544,7 +542,7 @@ plot_list <- list()
 #Loop to run five random plots subset above 
 for(P in good_sample){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:25), ]
+  r1 <- r1[-c(1:30), ]
   
   p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
   ylab(expression(paste( CO [2], " (ppm)"))) +
@@ -587,7 +585,7 @@ bad_plots <- unique(fluxes_weird$Plot)
 #Loop to run five random plots subset above 
 for(P in bad_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:25), ]
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
   ylab(expression(paste( CO [2], " (ppm)"))) +
   xlab("Time") + labs(title = P) + 
@@ -637,7 +635,7 @@ tail_plots <- unique(tails$Plot)
 #Loop to run five random plots subset above 
 for(P in tail_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:25), ]
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
   ylab(expression(paste( CO [2], " (ppm)"))) +
   xlab("Time") + labs(title = P) + 
@@ -681,7 +679,7 @@ neg_plots <- unique(fluxes_negative$Plot)
 #Loop to run five random plots subset above 
 for(P in neg_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:25), ]
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
   ylab(expression(paste( CO [2], " (ppm)"))) +
   xlab("Time") + labs(title = P) + 
@@ -726,7 +724,7 @@ all_plots <- unique(fluxes$Plot)
 #Loop to run five random plots subset above 
 for(P in all_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:25), ]
+  r1 <- r1[-c(1:30), ]
   p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
   ylab(expression(paste( CO [2], " (ppm)"))) +
   xlab("Time") + labs(title = P) + 
