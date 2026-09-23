@@ -1,13 +1,14 @@
 CO2: 
-Collar_29_2026-06-10 11:31:12 - add 15 sec
 Collar_45_2026-06-10 05:47:26 - add 15 sec
 
 Collar 13 - add 30 sec
-Collar 14 - add 30 sec
+Collar 14 - add 30 sec, subtract 30 sec
 Collar 15 - add 30 sec
 Collar 16 - add 30 sec
-Collar 29 - add 30 sec
-Collar 40 - add 30 sec
+Collar 29 - add 30 sec, subtract 30 sec
+Collar 38 - add 30 sec
+Collar 40 - add 30 sec, subtract 15 sec 
+Collar 41 - add 15 sec
 Collar 43 - add 15 sec
 Collar 44 - add 15 sec
 Collar 49 - add 15 sec
@@ -18,4 +19,10 @@ Collar_14_2026-06-10 12:00:30 - remove
 CH4: 
 
 
-N2O: left as-is because most are messy and don't want to mess up CO2/CH4 fluxes
+N2O: 
+Collar_13_2026-06-10 05:57:31 - remove 30 sec
+Collar_45_2026-06-10 20:47:25 -remove 10 sec
+
+
+***What is the best deadband? 30 seconds seems like a long time for 90 second flux
+***Try adjusting all control fluxes by difference between 8100 and 7810? 
