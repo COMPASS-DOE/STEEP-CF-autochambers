@@ -31,6 +31,7 @@ library(hms)
 library(googledrive)
 library(purrr)
 library(readr)
+library(stringr)
 
 Date <- "20260610"
 Date_dashes <- "2026-06-10"
@@ -134,6 +135,13 @@ metadat_edited <- metadat %>%
   ####Make changes to metadata####
   mutate(Time_8100 = as_hms(Time_8100)) %>%
   
+   ####Adjust time from 8100 to 7810 time
+  # mutate(Time_7810 = case_when(
+  #   Plot == "Fresh" ~ Time_7810 + 55, 
+  #   Plot == "Salt" ~ Time_7810 + 59, 
+  #   Plot == "Control" ~ Time_7810 + 40
+  #   ) ) %>% 
+  
   # Change start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
   mutate(
   Time_7810 = 
@@ -156,7 +164,8 @@ metadat_edited <- metadat %>%
 
   # Change observation length (a regular observation length is 90 seconds)
   mutate(total_seconds = case_when(
-    # unique_ID == "Collar_41_2026-06-09 15:29:08" ~ total_seconds - 30,
+    unique_ID == "Collar_13_2026-06-10 05:57:31" ~ total_seconds - 30,
+    unique_ID == "Collar_45_2026-06-10 20:47:25" ~ total_seconds - 10,
     label == 14 ~ total_seconds - 30,
     label == 29 ~ total_seconds - 30,
     label == 40 ~ total_seconds - 30,

@@ -25,4 +25,3 @@ Collar_45_2026-06-10 20:47:25 -remove 10 sec
 
 
 ***What is the best deadband? 30 seconds seems like a long time for 90 second flux
-***Try adjusting all control fluxes by difference between 8100 and 7810? 
