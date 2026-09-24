@@ -25,6 +25,7 @@ library(hms)
 library(googledrive)
 library(purrr)
 library(readr)
+library(stringr)
 
 Date <- "20260610"
 Date_dashes <- "2026-06-10"
@@ -151,6 +152,43 @@ alldat_ctrl_date$flag <- ctrl_metadat$flag[alldat_ctrl_date$metadat_row]
 
 ctrl_metadat$metadat_row <- seq_len(nrow(ctrl_metadat))
 
+dat <- alldat_ctrl_date %>% 
+  filter(TIMESTAMP > paste0(Date_dashes, "00:30:00"),
+         TIMESTAMP < paste0(Date_dashes, "01:30:00")) %>%
+  mutate(Collar = case_when(
+    str_detect(Plot, "Collar_13") ~ "Collar 13",
+    str_detect(Plot, "Collar_14") ~ "Collar 14",
+    str_detect(Plot, "Collar_15") ~ "Collar 15",
+    str_detect(Plot, "Collar_16") ~ "Collar 16",
+    str_detect(Plot, "Collar_49") ~ "Collar 49",
+    TRUE                          ~ "Other"
+  ), 
+    Collar = factor(
+      Collar,
+      levels = c(
+        "Collar 13",
+        "Collar 14",
+        "Collar 15",
+        "Collar 16",
+        "Collar 49",
+        "Other"
+      )
+    )
+  )
+
+ggplot(dat, aes(TIMESTAMP, N2O, colour = Collar)) +
+  geom_point() +
+  scale_color_manual(
+    values = c(
+      "Collar 13" = "red",
+      "Collar 14" = "orange",
+      "Collar 15" = "yellow",
+      "Collar 16" = "green",
+      "Collar 49" = "blue",
+      "Other" = "grey"
+    )
+  ) +
+  theme_classic()
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
@@ -189,6 +227,49 @@ alldat_fresh_date$flag <- fresh_metadat$flag[alldat_fresh_date$metadat_row]
 
 fresh_metadat$metadat_row <- seq_len(nrow(fresh_metadat))
 
+dat <- alldat_fresh_date %>% 
+  filter(TIMESTAMP > paste0(Date_dashes, "00:30:00"),
+         TIMESTAMP < paste0(Date_dashes, "01:00:00")) %>%
+  mutate(Collar = case_when(
+    str_detect(Plot, "Collar_41") ~ "Collar 41",
+    str_detect(Plot, "Collar_42") ~ "Collar 42",
+    str_detect(Plot, "Collar_43") ~ "Collar 43",
+    str_detect(Plot, "Collar_44") ~ "Collar 44",
+    str_detect(Plot, "Collar_40") ~ "Collar 40",
+    str_detect(Plot, "Collar_38") ~ "Collar 38",
+    str_detect(Plot, "Collar_45") ~ "Collar 45",
+    TRUE                          ~ "Other"
+  ), 
+    Collar = factor(
+      Collar,
+      levels = c(
+        "Collar 41",
+        "Collar 42",
+        "Collar 43",
+        "Collar 44",
+        "Collar 40",
+        "Collar 38",
+        "Collar 45",
+        "Other"
+      )
+    )
+  )
+
+ggplot(dat, aes(TIMESTAMP, N2O, colour = Collar)) +
+  geom_point() +
+  scale_color_manual(
+    values = c(
+      "Collar 41" = "red",
+      "Collar 42" = "orange",
+      "Collar 43" = "yellow",
+      "Collar 44" = "green",
+      "Collar 40" = "purple",
+      "Collar 38" = "lightblue",
+      "Collar 45" = "blue",
+      "Other" = "grey"
+    )
+  ) +
+  theme_classic()
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
@@ -226,6 +307,49 @@ alldat_salt_date$flag <- salt_metadat$flag[alldat_salt_date$metadat_row]
 
 salt_metadat$metadat_row <- seq_len(nrow(salt_metadat))
 
+dat <- alldat_salt_date %>% 
+  filter(TIMESTAMP > paste0(Date_dashes, "00:30:00"),
+         TIMESTAMP < paste0(Date_dashes, "01:00:00")) %>%
+  mutate(Collar = case_when(
+    str_detect(Plot, "Collar_29") ~ "Collar 29",
+    str_detect(Plot, "Collar_30") ~ "Collar 30",
+    str_detect(Plot, "Collar_31") ~ "Collar 31",
+    str_detect(Plot, "Collar_32") ~ "Collar 32",
+    str_detect(Plot, "Collar_50") ~ "Collar 50",
+    str_detect(Plot, "Collar_51") ~ "Collar 51",
+    str_detect(Plot, "Collar_52") ~ "Collar 52",
+    TRUE                          ~ "Other"
+  ), 
+    Collar = factor(
+      Collar,
+      levels = c(
+        "Collar 29",
+        "Collar 30",
+        "Collar 31",
+        "Collar 32",
+        "Collar 50",
+        "Collar 51",
+        "Collar 52",
+        "Other"
+      )
+    )
+  )
+
+ggplot(dat, aes(TIMESTAMP, N2O, colour = Collar)) +
+  geom_point() +
+  scale_color_manual(
+    values = c(
+      "Collar 29" = "red",
+      "Collar 30" = "orange",
+      "Collar 31" = "yellow",
+      "Collar 32" = "green",
+      "Collar 50" = "purple",
+      "Collar 51" = "lightblue",
+      "Collar 52" = "blue",
+      "Other" = "grey"
+    )
+  ) +
+  theme_classic()
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
@@ -242,7 +366,7 @@ filter(!is.na(N2O))
 ## Combine all the matched data back into one dataframe 
 ```{r}
 
-alldat <-  bind_rows(alldat_ctrl_date, alldat_fresh_date, alldat_salt_date) #
+alldat <-  bind_rows(alldat_ctrl_date, alldat_fresh_date, alldat_salt_date) 
 
 ```
 
