@@ -151,13 +151,6 @@ metadat_edited <- metadat %>%
   label == 15 ~ Time_8100 + 30,
   label == 16 ~ Time_8100 + 30,
 
-  label == 44 ~ Time_8100 + 15,
-  label == 45 ~ Time_8100 + 15,
-  
-  unique_ID == "Collar_40_2026-06-11 03:41:40" ~ Time_8100 + 15,
-  unique_ID == "Collar_41_2026-06-11 01:29:39" ~ Time_8100 + 15,
-  unique_ID == "Collar_49_2026-06-11 10:09:28" ~ Time_8100 + 15,
-
   TRUE ~ Time_8100) ) %>%
   mutate(Time_7810 = hms::as_hms(as.numeric(Time_7810))) %>%
   mutate(Time_7810 = as.character(Time_7810)) %>%
@@ -168,18 +161,14 @@ metadat_edited <- metadat %>%
     label == 14 ~ total_seconds - 30,
     label == 15 ~ total_seconds - 30,
     label == 16 ~ total_seconds - 30,
-    label == 41 ~ total_seconds - 30,
-    label == 42 ~ total_seconds - 15,
-    label == 52 ~ total_seconds - 30,
-    label == 32 ~ total_seconds - 30,
     TRUE ~ total_seconds) ) %>%
   
 # Change 7820 start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
   mutate(
   Time_7820 =
   case_when(
-  Plot == "Fresh" ~ Time_8100 - 30,
-  Plot == "Salt" ~ Time_8100 - 30,
+  Plot == "Fresh" ~ Time_8100,
+  Plot == "Salt" ~ Time_8100,
   TRUE ~ Time_8100) ) %>%
   mutate(Time_7820 = hms::as_hms(as.numeric(Time_7820))) %>%
   mutate(Time_7820 = as.character(Time_7820)) %>%
@@ -190,14 +179,12 @@ metadat_edited <- metadat %>%
     # as_hms(Time_8100) != as_hms(Time_7820) ~ "Time changed", 
     as.numeric(ms(obs_length)) != total_seconds ~ "Time changed", 
     TRUE ~ NA_character_) 
-  ) %>%
+  ) #%>%
 
-  #Add a flag here for fluxes that are not usable
-  mutate(flag = if_else(unique_ID %in% c(
-    "Collar_30_2026-06-11 10:18:56", 
-    "Collar_32_2026-06-11 15:24:55", 
-    "Collar_40_2026-06-11 01:41:42"),
-    "Flux unusable, remove", flag) )
+  # #Add a flag here for fluxes that are not usable
+  # mutate(flag = if_else(unique_ID %in% c(
+  #   ""),
+  #   "Flux unusable, remove", flag) )
 
 
 ##Write out edited metadata
@@ -513,7 +500,7 @@ tails <- rbind(fluxes_low, fluxes_high)
 
 ```
 
-## Check the fluxes for which I changed the start time due to lags or ebullition (recorded in notes of metadata)
+## Check the fluxes for which I changed the start time due to lags or ebullition
 ```{r, echo=FALSE}
 
 tobechecked <- c()
