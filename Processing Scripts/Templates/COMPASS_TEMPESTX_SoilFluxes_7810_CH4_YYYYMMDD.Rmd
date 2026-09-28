@@ -1,18 +1,12 @@
 ---
-title: "COMPASS_TEMPEST_Autochamber_SoilFlux_CO2_20260611"
-author: "Zoe Read & S. Wilson"
+title: "COMPASS_Synoptic_MacrophyteFluxes_2025_CH4_20260611"
+author: "Zoe Read"
 date: "`r Sys.Date()`"
 output: 
   pdf_document:
     toc: true
     number_sections: true
 ---
-
-##Suggestions: 
-# May want to develop a function to select the linear portion of fluxes so you don't have to do it manually
-# Set a cutoff for when fluxes are so low they can have a low R2
-
-
 ## Set Up
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -33,16 +27,15 @@ library(purrr)
 library(readr)
 library(stringr)
 
+Date <- "20260611"
 Date_dashes <- "2026-06-11"
-Date <- gsub("-", "", Date_dashes)
-
 ```
 
 ## Pull in Raw Datafiles
 ```{r, echo = FALSE}
 
 # Create temporary download folder
-tmp_dir <- file.path(tempdir(), "pulse_downloads_co2")
+tmp_dir <- file.path(tempdir(), "pulse_downloads_ch4")
 
 dir.create(
   tmp_dir,
@@ -73,8 +66,7 @@ lapply(seq_len(nrow(files_pulse)), function(i) {
   
 })
 
-
-# List extracted 8100 files (full paths)
+# List extracted 7810 files (full paths)
 file.list <- list.files(
   path = tmp_dir,
   pattern = "TG10.*\\.data$",
@@ -82,8 +74,7 @@ file.list <- list.files(
   recursive = TRUE
 )
 
-(file.list)
-
+head(file.list)
 
 #Read in all the datafiles 
 
@@ -107,102 +98,17 @@ alldat_salt <- map(salt_file, ffi_read_LI7810)|>list_rbind()
 alldat_salt_date <- alldat_salt %>% 
   filter(TIMESTAMP >= paste0(Date_dashes, "00:00:00")) %>% 
   filter(TIMESTAMP <= paste0(Date_dashes, "23:59:59"))
-
 ```
 
-## Read in  metadata file and separate by plot - RUN THIS CODE TO EDIT THE METADATA!
+## Read in metadata file and match to raw data
 ```{r, echo = FALSE, message=FALSE}
 
 #read in metadatfile
-md <- (here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed_", Date, ".csv")))
+md <- (here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_edited_", Date, ".csv")))
 metadat <- read.csv(md) 
 
-metadat_edited <- metadat %>%
-  mutate(
-    # Ensure it's a date-time object
-    start_time = ymd_hms(start_time), 
-    # Extract date
-    Date = as.character(date(start_time)),         
-    # Extract time
-    Time_8100 = format(start_time, "%H:%M:%S"), 
-    #Parses the string as "minutes:seconds" and extracts the total duration in seconds from the period
-    total_seconds = as.numeric(ms(obs_length)), 
-    #Add unique plot ID for each timestamp 
-    unique_ID = paste("Collar", label, start_time, sep = "_"), 
-    Vtotal_m3 = Vtotal/(100^3)) %>%
-  
-  
-  ####Make changes to metadata####
-  mutate(Time_8100 = as_hms(Time_8100)) %>%
-  
-   ####Adjust time from 8100 to 7810 time
-  # mutate(Time_7810 = case_when(
-  #   Plot == "Fresh" ~ Time_7810 + 55, 
-  #   Plot == "Salt" ~ Time_7810 + 59, 
-  #   Plot == "Control" ~ Time_7810 + 40
-  #   ) ) %>% 
-  
-  # Change start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
-  mutate(
-  Time_7810 = 
-  case_when(
-  label == 13 ~ Time_8100 + 30,
-  label == 14 ~ Time_8100 + 30,
-  label == 15 ~ Time_8100 + 30,
-  label == 16 ~ Time_8100 + 30,
-
-  label == 44 ~ Time_8100 + 15,
-  label == 45 ~ Time_8100 + 15,
-  
-  unique_ID == "Collar_40_2026-06-11 03:41:40" ~ Time_8100 + 15,
-  unique_ID == "Collar_41_2026-06-11 01:29:39" ~ Time_8100 + 15,
-  unique_ID == "Collar_49_2026-06-11 10:09:28" ~ Time_8100 + 15,
-
-  TRUE ~ Time_8100) ) %>%
-  mutate(Time_7810 = hms::as_hms(as.numeric(Time_7810))) %>%
-  mutate(Time_7810 = as.character(Time_7810)) %>%
-
-  # Change observation length (a regular observation length is 90 seconds)
-  mutate(total_seconds = case_when(
-    label == 13 ~ total_seconds - 30,
-    label == 14 ~ total_seconds - 30,
-    label == 15 ~ total_seconds - 30,
-    label == 16 ~ total_seconds - 30,
-    label == 41 ~ total_seconds - 30,
-    label == 42 ~ total_seconds - 15,
-    label == 52 ~ total_seconds - 30,
-    label == 32 ~ total_seconds - 30,
-    TRUE ~ total_seconds) ) %>%
-  
-# Change 7820 start time (label is the collar ID, can subtract 10-15 seconds, can also use the unique_ID for a specific collar+date+time combo)
-  mutate(
-  Time_7820 =
-  case_when(
-  Plot == "Fresh" ~ Time_8100 - 30,
-  Plot == "Salt" ~ Time_8100 - 30,
-  TRUE ~ Time_8100) ) %>%
-  mutate(Time_7820 = hms::as_hms(as.numeric(Time_7820))) %>%
-  mutate(Time_7820 = as.character(Time_7820)) %>%
-  
-  #Add a flag here for times that are changed 
-  mutate(flag = case_when(
-    as_hms(Time_8100) != as_hms(Time_7810) ~ "Time changed", 
-    # as_hms(Time_8100) != as_hms(Time_7820) ~ "Time changed", 
-    as.numeric(ms(obs_length)) != total_seconds ~ "Time changed", 
-    TRUE ~ NA_character_) 
-  ) %>%
-
-  #Add a flag here for fluxes that are not usable
-  mutate(flag = if_else(unique_ID %in% c(
-    "Collar_30_2026-06-11 10:18:56", 
-    "Collar_32_2026-06-11 15:24:55", 
-    "Collar_40_2026-06-11 01:41:42"),
-    "Flux unusable, remove", flag) )
-
-
-##Write out edited metadata
-write.csv(metadat_edited, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_edited_", Date, ".csv")), row.names = FALSE)           #Change file name
-
+#make some changes to the start times
+metadat_edited <- metadat
 
 #Control metadata 
 ctrl_metadat <- metadat_edited %>%
@@ -217,6 +123,7 @@ salt_metadat <- metadat_edited %>%
   filter(Plot == "Salt") 
 
 ```
+
 
 ######## Control MATCHING ##############
 
@@ -242,53 +149,16 @@ alldat_ctrl_date$flag <- ctrl_metadat$flag[alldat_ctrl_date$metadat_row]
 
 ctrl_metadat$metadat_row <- seq_len(nrow(ctrl_metadat))
 
-dat <- alldat_ctrl_date %>% 
-  filter(TIMESTAMP > paste0(Date_dashes, "00:30:00"),
-         TIMESTAMP < paste0(Date_dashes, "01:30:00")) %>%
-  mutate(Collar = case_when(
-    str_detect(Plot, "Collar_13") ~ "Collar 13",
-    str_detect(Plot, "Collar_14") ~ "Collar 14",
-    str_detect(Plot, "Collar_15") ~ "Collar 15",
-    str_detect(Plot, "Collar_16") ~ "Collar 16",
-    str_detect(Plot, "Collar_49") ~ "Collar 49",
-    TRUE                          ~ "Other"
-  ), 
-    Collar = factor(
-      Collar,
-      levels = c(
-        "Collar 13",
-        "Collar 14",
-        "Collar 15",
-        "Collar 16",
-        "Collar 49",
-        "Other"
-      )
-    )
-  )
-
-ggplot(dat, aes(TIMESTAMP, CO2, colour = Collar)) +
-  geom_point() +
-  scale_color_manual(
-    values = c(
-      "Collar 13" = "red",
-      "Collar 14" = "orange",
-      "Collar 15" = "yellow",
-      "Collar 16" = "green",
-      "Collar 49" = "blue",
-      "Other" = "grey"
-    )
-  ) +
-  theme_classic()
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
 #remove the rows that don't match to metadata
-alldat_ctrl_date_meta <- alldat_ctrl_date %>%
+alldat_ctrl_date <- alldat_ctrl_date %>%
 filter(!is.na(metadat_row))
 
 #can remove any row that have NA's in the CO2 column
-alldat_ctrl_date_noNA <- alldat_ctrl_date %>%
-filter(!is.na(CO2))
+alldat_ctrl_date <- alldat_ctrl_date %>%
+filter(!is.na(CH4))
 
 ```
 
@@ -313,67 +183,22 @@ alldat_fresh_date$final_temp <- fresh_metadat$Tcham[alldat_fresh_date$metadat_ro
 alldat_fresh_date$V2_avg <- fresh_metadat$V2_avg[alldat_fresh_date$metadat_row] 
 alldat_fresh_date$V3_avg <- fresh_metadat$V3_avg[alldat_fresh_date$metadat_row] 
 alldat_fresh_date$V4_avg <- fresh_metadat$V4_avg[alldat_fresh_date$metadat_row] 
-alldat_fresh_date$flag <- alldat_fresh_date$flag[alldat_fresh_date$metadat_row] 
+alldat_fresh_date$flag <- fresh_metadat$flag[alldat_fresh_date$metadat_row] 
 
 fresh_metadat$metadat_row <- seq_len(nrow(fresh_metadat))
-
-dat <- alldat_fresh_date %>% 
-  filter(TIMESTAMP > paste0(Date_dashes, "00:30:00"),
-         TIMESTAMP < paste0(Date_dashes, "01:00:00")) %>%
-  mutate(Collar = case_when(
-    str_detect(Plot, "Collar_41") ~ "Collar 41",
-    str_detect(Plot, "Collar_42") ~ "Collar 42",
-    str_detect(Plot, "Collar_43") ~ "Collar 43",
-    str_detect(Plot, "Collar_44") ~ "Collar 44",
-    str_detect(Plot, "Collar_40") ~ "Collar 40",
-    str_detect(Plot, "Collar_38") ~ "Collar 38",
-    str_detect(Plot, "Collar_45") ~ "Collar 45",
-    TRUE                          ~ "Other"
-  ), 
-    Collar = factor(
-      Collar,
-      levels = c(
-        "Collar 41",
-        "Collar 42",
-        "Collar 43",
-        "Collar 44",
-        "Collar 40",
-        "Collar 38",
-        "Collar 45",
-        "Other"
-      )
-    )
-  )
-
-ggplot(dat, aes(TIMESTAMP, CO2, colour = Collar)) +
-  geom_point() +
-  scale_color_manual(
-    values = c(
-      "Collar 41" = "red",
-      "Collar 42" = "orange",
-      "Collar 43" = "yellow",
-      "Collar 44" = "green",
-      "Collar 40" = "purple",
-      "Collar 38" = "lightblue",
-      "Collar 45" = "blue",
-      "Other" = "grey"
-    )
-  ) +
-  theme_classic()
 
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
 #remove the rows that don't match to metadata
-alldat_fresh_date_meta <- alldat_fresh_date %>%
+alldat_fresh_date <- alldat_fresh_date %>%
 filter(!is.na(metadat_row))
 
 #can remove any row that have NA's in the CO2 column
-alldat_fresh_date_noNA <- alldat_fresh_date_meta %>%
-filter(!is.na(CO2))
+alldat_fresh_date <- alldat_fresh_date %>%
+filter(!is.na(CH4))
 
 ```
-
 
 ############### Saltwater Plot ############################
 
@@ -395,71 +220,27 @@ alldat_salt_date$final_temp <- salt_metadat$Tcham[alldat_salt_date$metadat_row] 
 alldat_salt_date$V2_avg <- salt_metadat$V2_avg[alldat_salt_date$metadat_row] 
 alldat_salt_date$V3_avg <- salt_metadat$V3_avg[alldat_salt_date$metadat_row] 
 alldat_salt_date$V4_avg <- salt_metadat$V4_avg[alldat_salt_date$metadat_row] 
-alldat_salt_date$flag <- alldat_salt_date$flag[alldat_salt_date$metadat_row] 
+alldat_salt_date$flag <- salt_metadat$flag[alldat_salt_date$metadat_row] 
 
 salt_metadat$metadat_row <- seq_len(nrow(salt_metadat))
 
-dat <- alldat_salt_date %>% 
-  filter(TIMESTAMP > paste0(Date_dashes, "00:30:00"),
-         TIMESTAMP < paste0(Date_dashes, "01:00:00")) %>%
-  mutate(Collar = case_when(
-    str_detect(Plot, "Collar_29") ~ "Collar 29",
-    str_detect(Plot, "Collar_30") ~ "Collar 30",
-    str_detect(Plot, "Collar_31") ~ "Collar 31",
-    str_detect(Plot, "Collar_32") ~ "Collar 32",
-    str_detect(Plot, "Collar_50") ~ "Collar 50",
-    str_detect(Plot, "Collar_51") ~ "Collar 51",
-    str_detect(Plot, "Collar_52") ~ "Collar 52",
-    TRUE                          ~ "Other"
-  ), 
-    Collar = factor(
-      Collar,
-      levels = c(
-        "Collar 29",
-        "Collar 30",
-        "Collar 31",
-        "Collar 32",
-        "Collar 50",
-        "Collar 51",
-        "Collar 52",
-        "Other"
-      )
-    )
-  )
-
-ggplot(dat, aes(TIMESTAMP, CO2, colour = Collar)) +
-  geom_point() +
-  scale_color_manual(
-    values = c(
-      "Collar 29" = "red",
-      "Collar 30" = "orange",
-      "Collar 31" = "yellow",
-      "Collar 32" = "green",
-      "Collar 50" = "purple",
-      "Collar 51" = "lightblue",
-      "Collar 52" = "blue",
-      "Other" = "grey"
-    )
-  ) +
-  theme_classic()
 
 ### Need to deal with weird temperatures - probably take the one from the closest reasonable measurement 
 
 #remove the rows that don't match to metadata 
-alldat_salt_date_meta <- alldat_salt_date %>%
+alldat_salt_date <- alldat_salt_date %>%
 filter(!is.na(metadat_row))
 
 #can remove any row that have NA's in the CO2 column 
-alldat_salt_date_noNA <- alldat_salt_date_meta %>%
-filter(!is.na(CO2))
+alldat_salt_date <- alldat_salt_date %>%
+filter(!is.na(CH4))
 
 ```
-
 
 ## Combine all the matched data back into one dataframe 
 ```{r}
 
-alldat <-  bind_rows(alldat_ctrl_date_noNA, alldat_fresh_date_noNA, alldat_salt_date_noNA)
+alldat <-  bind_rows(alldat_ctrl_date, alldat_fresh_date, alldat_salt_date)
 
 ```
 
@@ -467,18 +248,18 @@ alldat <-  bind_rows(alldat_ctrl_date_noNA, alldat_fresh_date_noNA, alldat_salt_
 ## Calculate fluxes 
 ```{r, echo = FALSE, message = FALSE, warning=FALSE}
 #change the units
-alldat$CO2_umol <- ffi_ppm_to_umol(alldat$CO2, 
+alldat$CH4_nmol <- ffi_ppb_to_nmol(alldat$CH4, 
                                    volume = alldat$Volume # m3
                                    )    # degrees C
 #> Assuming atm = 101325 Pa
 #> Using R = 8.31446261815324 m3 Pa K-1 mol-1
 
-alldat$CO2_umol_m2 <- alldat$CO2_umol / 0.0318
+alldat$CH4_nmol_m2 <- alldat$CH4_nmol / 0.16
 
 fluxes <- ffi_compute_fluxes(alldat,
                              group_column = "Plot", 
                              time_column = "TIMESTAMP", 
-                             gas_column = "CO2_umol_m2", 
+                             gas_column = "CH4_nmol_m2", 
                              dead_band = 30) #, c0_band = 5?
 # head(fluxes)
 
@@ -489,7 +270,7 @@ ggplot(fluxes, aes(Plot, lin_flux.estimate, color = lin_r.squared)) +
                    ymax = lin_flux.estimate+ lin_flux.std.error)) +
   scale_color_gradientn(colours = c("darkred",  "red", "white","lightblue", "darkblue"),
                         values = c(0, 0.5, 0.6, 0.7, 1)) +
-  ylab("CO2 flux (nmol/m2/s)")+ 
+  ylab("CH4 flux (nmol/m2/s)")+ 
   theme(axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank()) 
@@ -498,7 +279,7 @@ ggplot(fluxes, aes(Plot, lin_flux.estimate, color = lin_r.squared)) +
 fluxes_good <- as.data.frame(subset(fluxes, lin_r.squared >= .90, select = Plot:TIMESTAMP_max))
 fluxes_weird <- as.data.frame(subset(fluxes, lin_r.squared < .90, select = Plot:TIMESTAMP_max))
 
-#negative CO2 fluxes
+#negative CH4 fluxes
 fluxes_negative <- as.data.frame(subset(fluxes,  lin_flux.estimate < 0, select = Plot:TIMESTAMP_max))
 
 #find fluxes that represent the first and fourth quartile of the data 
@@ -518,21 +299,26 @@ tails <- rbind(fluxes_low, fluxes_high)
 
 tobechecked <- c()
 
-colnames <- c()
+colnames <- c("Plot")
+
+#Empty list to store plots
+plot_list <- list()
 
 #Loop to run plots above 
 for(P in tobechecked){ 
   r1 <- subset(alldat, Plot == P)
-  p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
-  ylab(expression(paste( CO [2], " (ppm)"))) +
+  r1 <- r1[-c(1:30), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
+  
   print(p1)
 }
 
+
 #list of the ones that I changed and checked and looked good? 
 fixedplots <- c()
-  
 
 ```
 
@@ -554,9 +340,8 @@ plot_list <- list()
 for(P in good_sample){ 
   r1 <- subset(alldat, Plot == P)
   r1 <- r1[-c(1:30), ]
-  
-  p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
-  ylab(expression(paste( CO [2], " (ppm)"))) +
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -587,18 +372,20 @@ for(i in seq_along(plot_pages)) {
 ## Take a look at the bad fluxes <0.9 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 
-# If a flux was started too early/late, change start time or Obs_length in metadata file and note n the note column
-plot_list <- list()
+# If a flux was started too early/late, change start time or Obs_length in metadata file and note in the note column
 
 ### pull out fluxes with R2 < 0.9 and put them in a list 
 bad_plots <- unique(fluxes_weird$Plot)
 
+#Empty list to store plots
+plot_list <- list()
+
 #Loop to run five random plots subset above 
 for(P in bad_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:10), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
-  ylab(expression(paste( CO [2], " (ppm)"))) +
+  r1 <- r1[-c(1:30), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -627,8 +414,19 @@ for(i in seq_along(plot_pages)) {
 
 #Notes on the bad ones 
 
+##Fluxes that have low R squared but are okay
 
-##Other fluxes have low R squared but are okay
+
+##Fluxes to remove: 
+
+
+
+##Fluxes to change: 
+
+
+##Already add notes to metadata for the ones I fixed
+
+##Add qaqc flags 
 
 ###########################
 
@@ -638,6 +436,7 @@ for(i in seq_along(plot_pages)) {
 ## Look at the really high or really low ones to see if there is a timing issue or something
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 
+#Empty list to store plots
 plot_list <- list()
 
 ### pull out fluxes in the 5% and 95% tails to look at really high and really low 
@@ -646,9 +445,9 @@ tail_plots <- unique(tails$Plot)
 #Loop to run five random plots subset above 
 for(P in tail_plots){ 
   r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:10), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
-  ylab(expression(paste( CO [2], " (ppm)"))) +
+  r1 <- r1[-c(1:30), ]
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -679,47 +478,6 @@ for(i in seq_along(plot_pages)) {
 
 ```
 
-## Look at the negative CO2 fluxes
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
-
-plot_list <- list()
-
-### pull out negative fluxes and put them in a list 
-neg_plots <- unique(fluxes_negative$Plot)
-
-#Loop to run five random plots subset above 
-for(P in neg_plots){ 
-  r1 <- subset(alldat, Plot == P)
-  r1 <- r1[-c(1:30), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
-  ylab(expression(paste( CO [2], " (ppm)"))) +
-  xlab("Time") + labs(title = P) + 
-  geom_smooth(color="red")
-  
-  plot_list[[length(plot_list) + 1]] <- p1
-}
-
-### number of plots per page
-plots_per_page <- 2
-
-# split plots into pages
-plot_pages <- split(
-  plot_list,
-  ceiling(seq_along(plot_list) / plots_per_page)
-)
-
-# print each page
-for(i in seq_along(plot_pages)) {
-  
-  print(
-    wrap_plots(plot_pages[[i]], ncol = 2)
-  )
-  
-}
-
-####################Negative CO2 fluxes
-
-```
 
 ## Plot all fluxes
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
@@ -727,17 +485,17 @@ for(i in seq_along(plot_pages)) {
 #ffi_qaqc(fluxes, Plot, output_file = "qaqc.html", output_dir = getwd(), open_output = TRUE)
 
 ### pull a random sample of good fluxes to check and plot 
+all_plots <- unique(fluxes$Plot)
+
 #Empty list to store plots
 plot_list <- list()
-
-all_plots <- unique(fluxes$Plot)
 
 #Loop to run five random plots subset above 
 for(P in all_plots){ 
   r1 <- subset(alldat, Plot == P)
   r1 <- r1[-c(1:30), ]
-  p1 <- ggplot(r1, aes(TIMESTAMP, CO2)) + geom_point() + theme_classic() +
-  ylab(expression(paste( CO [2], " (ppm)"))) +
+  p1 <- ggplot(r1, aes(TIMESTAMP, CH4)) + geom_point() + theme_classic() +
+  ylab(expression(paste( CH [4], " (ppb)"))) +
   xlab("Time") + labs(title = P) + 
   geom_smooth(color="red")
   
@@ -843,7 +601,7 @@ allflux_notes$`NA`<- NULL
 allflux_notes$`NA`<- NULL
 
 #Change file name
-write.csv(allflux_notes, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_7810_CO2_processed_", Date, ".csv")), row.names = FALSE)         
+write.csv(allflux_notes, file=here::here("Processed_Data", paste0("COMPASS_TEMPESTX_SoilFluxes_7810_CH4_processed_", Date, ".csv")), row.names = FALSE)         
 
 ```
 
