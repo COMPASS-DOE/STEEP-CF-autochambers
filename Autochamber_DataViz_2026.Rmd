@@ -220,3 +220,10 @@ n2obr <- ggplot(dat_mod, aes(datetime, FN2O.LIN, color = Collar)) +
 n2obr
 ```
 
+# Reproducibility
+
+Document the computational environment used:
+
+```{r reproducibility}
+sessionInfo()
+```
