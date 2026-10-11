@@ -5,3 +5,7 @@
 
 # OS files
 .DS_Store
+
+# Temporary data
+/temp_data/*.txt
+/temp_data/*.81x
