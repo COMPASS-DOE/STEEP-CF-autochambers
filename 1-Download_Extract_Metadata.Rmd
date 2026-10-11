@@ -30,49 +30,77 @@ library(googledrive)
 
 ## Download zipped 81x files into temporary data folder
 
-```{r download}
+```{r download-8100}
 options(googledrive_quiet = TRUE)
 
 # Find temporary data directory
 ROOT <- find_root(has_file_pattern("Rproj$"))
 tmp_dir <- file.path(ROOT, "temp_data/")
 
-GDRIVE_FOLDER <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
+GDRIVE_8100_FOLDER <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
 
 # Filter to necessary files
-files_pulse <- drive_ls(path = GDRIVE_FOLDER,
+files_pulse <- drive_ls(path = GDRIVE_8100_FOLDER,
                         recursive = TRUE,
                         pattern = "81x$")
 
-# Download files to local directory
-invisible(
-    lapply(seq_len(nrow(files_pulse)), function(i) {
-        drive_download(
-            file = as_id(files_pulse$id[i]),
-            path = file.path(tmp_dir, files_pulse$name[i]),
-            overwrite = TRUE
-        )
-    })
-)
+download_files <- function(files_pulse) {
+    # Download files to local directory
+    invisible(
+        lapply(seq_len(nrow(files_pulse)), function(i) {
+            outfile <- file.path(tmp_dir, files_pulse$name[i])
+            if(file.exists(outfile)) {
+                message("Skipped existing file ", basename(outfile))
+            }
+            drive_download(
+                file = as_id(files_pulse$id[i]),
+                path = outfile,
+                overwrite = TRUE
+            )
+        })
+    )   
+}
+
+download_files(files_pulse)
 
 # List extracted 8100 files (full paths)
-file.list <- list.files(path = tmp_dir,
-                        pattern = "81x$",
-                        full.names = TRUE,
-                        recursive = TRUE)
+file.list.8100 <- list.files(path = tmp_dir,
+                             pattern = "81x$",
+                             full.names = TRUE)
 
-message("Downloaded ", length(file.list), " files")
+message("We have ", length(file.list.8100), " files")
 ```
 
-## Create separate files in the temporary directory
+## Download 7810 data files
 
-```{r split-files}
+```{r download-7810}
+GDRIVE_7810_FOLDER <- "https://drive.google.com/drive/folders/12vQiSxn6l4wgJ5tpSI2TNHl7k6Jkx77s"
+
+# Filter to necessary files
+files_pulse <- drive_ls(
+  path = GDRIVE_7810_FOLDER,
+  recursive = TRUE,
+  pattern = "TG10.*data$")
+
+download_files(files_pulse)
+
+# 7810 files (full paths)
+file.list.7810 <- list.files(path = tmp_dir,
+                        pattern = "TG10.*data$")
+
+message("We have ", length(file.list.7810), " files")
+```
+
+## Split 8100 files into one-per-observation files
+
+```{r split-8100-files}
 # Split files into multiple files, one for each chamber run, 
 # and save in temporary directory 
 
 file_counter <- 1
-for (f in file.list) { 
-    message("Reading ", basename(f), "... ", appendLF = FALSE)
+for (f in file.list.8100) { 
+    bnf <- basename(f)
+    message("Reading ", bnf, "... ", appendLF = FALSE)
     lines <- readLines(f)
     
     # Find all the lines that start with LI-8100 in this file
@@ -81,7 +109,8 @@ for (f in file.list) {
     l8100 <- c(l8100, length(lines) + 1) 
     
     for(i in seq_along(head(l8100, -1))) {
-       output_name <- paste0("/8100_split_file_", file_counter, ".txt")
+       output_name <- paste0(gsub(".81x", "", bnf, fixed = TRUE),
+                             "_", i, ".txt")
        first <- l8100[i]
        last <- l8100[i+1] - 1
        #message("Writing ", output_name, " (", basename(f), " lines ", first, "-", last, ")")
@@ -100,7 +129,7 @@ for (f in file.list) {
 
 ```{r extract-metadata}
 # List extracted JSON files (full paths)
-file.list <- list.files(
+split.file.list <- list.files(
     path = tmp_dir,
     pattern = "txt$",
     full.names = TRUE,
@@ -173,7 +202,7 @@ ffi_read_LI78x0 <- function(file, model) {
            V2_avg = V2_avg,
            V3_avg = V3_avg,
            V4_avg = V4_avg,
-           file = basename(f))
+           file = basename(file))
 }
 
 ffi_read_LI8100 <- function(file) {
@@ -181,7 +210,7 @@ ffi_read_LI8100 <- function(file) {
 }
 
 # Don't process any files that don't have the LI-800 and were just cut at the end 
-file.list <- file.list[sapply(file.list, function(f) {
+split.file.list <- split.file.list[sapply(split.file.list, function(f) {
     x <- readLines(f, n = 20, warn = FALSE)
     first <- x[nzchar(x)][1]
     
@@ -189,8 +218,8 @@ file.list <- file.list[sapply(file.list, function(f) {
 })]
 
 # Process all files and combine into a single data frame 
-message("Processing ", length(file.list), " split files...")
-lapply(file.list, ffi_read_LI8100) |> 
+message("Processing ", length(split.file.list), " split files...")
+lapply(split.file.list, ffi_read_LI8100) |> 
     bind_rows() ->
     alldat
 
@@ -211,7 +240,7 @@ alldat %>%
     alldat_collars
 
 ### Probably need to do some cleaning here on the temperature data 
-message("alldat is ", nrow(alldat), " x ", ncol(alldat))
+message("alldat_collars is ", nrow(alldat_collars), " x ", ncol(alldat_collars))
 ```
 
 ## Write out parsed 8100 metadata
