@@ -1,11 +1,10 @@
 ---
-title: "COMPASS_TEMPESTX_Download_Extract_Metadata"
+title: "1-Download_Extract_Metadata"
 author: "Zoe Read & S. Wilson"
 date: "`r Sys.Date()`"
-output: 
-  pdf_document:
-    toc: true
-    number_sections: true
+output:
+  html_document:
+    code_folding: hide
 ---
 
 ## Goals of this code:
@@ -14,11 +13,12 @@ output:
 2.  Separate 8100 file into each flux
 3.  Extract metadata from each flux file into a metadata sheet
 
-## Need to figure out how to incorporate the 8100 error log (remove those fluxes?)
+**Need to figure out how to incorporate the 8100 error log 
+(remove those fluxes?)**
 
-# Setup
+## Setup
 
-```{r Setup}
+```{r setup, message=FALSE}
 library(dplyr)
 library(stringr)
 library(tibble)
@@ -28,9 +28,10 @@ library(rprojroot)
 library(googledrive)
 ```
 
-## Pull zipped 81x files into temporary data folder
+## Download zipped 81x files into temporary data folder
 
-```{r, include=FALSE}
+```{r download}
+options(googledrive_quiet = TRUE)
 
 # Find temporary data directory
 ROOT <- find_root(has_file_pattern("Rproj$"))
@@ -59,17 +60,19 @@ file.list <- list.files(path = tmp_dir,
                         pattern = "81x$",
                         full.names = TRUE,
                         recursive = TRUE)
+
+message("Downloaded ", length(file.list), " files")
 ```
 
-## Create separate files in the temporary directory:
+## Create separate files in the temporary directory
 
-```{r}
+```{r split-files}
 # Split files into multiple files, one for each chamber run, 
 # and save in temporary directory 
 
 file_counter <- 1
 for (f in file.list) { 
-    message("Reading ", basename(f))
+    message("Reading ", basename(f), "... ", appendLF = FALSE)
     lines <- readLines(f)
     
     # Find all the lines that start with LI-8100 in this file
@@ -86,16 +89,16 @@ for (f in file.list) {
        file_counter <- file_counter + 1
     }
     if(is.null(i)) {
-        message("\tNO DATA FOUND")
+        message("NO DATA FOUND")
     } else {
-        message("\tWrote ", i, " split files")
+        message("wrote ", i, " split files")
     }
 } # for f
 ```
 
-##Code from fluxfinder functions:
+## Extract metadata from JSONs
 
-```{r}
+```{r extract-metadata}
 # List extracted JSON files (full paths)
 file.list <- list.files(
     path = tmp_dir,
@@ -186,14 +189,17 @@ file.list <- file.list[sapply(file.list, function(f) {
 })]
 
 # Process all files and combine into a single data frame 
+message("Processing ", length(file.list), " split files...")
 lapply(file.list, ffi_read_LI8100) |> 
     bind_rows() ->
     alldat
+
+message("alldat is ", nrow(alldat), " x ", ncol(alldat))
 ```
 
-##Match the 8100 metadata to the collar metadata
+## Join with collar metadata
 
-```{r}
+```{r collar-map}
 message("Reading collar map...")
 collar_metadata <- read_csv(file.path(ROOT, "metadata", "collar_map.csv"),
                             col_types = "ccic_")
@@ -205,12 +211,12 @@ alldat %>%
     alldat_collars
 
 ### Probably need to do some cleaning here on the temperature data 
-
+message("alldat is ", nrow(alldat), " x ", ncol(alldat))
 ```
 
 ## Write out parsed 8100 metadata
 
-```{r}
+```{r output}
 outfile <- file.path("Processed_Data",
                      "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed.csv")
 message("Writing ", outfile)
@@ -220,6 +226,6 @@ write_csv(alldat_collars, outfile)
 
 ## Reproducibility
 
-```{r}
+```{r reproducibility}
 sessionInfo()
 ```
