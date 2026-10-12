@@ -27,6 +27,8 @@ library(readr)
 library(R.utils)
 library(googledrive)
 library(arrow)
+library(ggplot2)
+theme_set(theme_bw())
 
 TMP_DIR <- "temp_data/"
 
@@ -308,6 +310,19 @@ processed %>%
 ### Probably need to do some cleaning here on the temperature data 
 message("processed_collars is ", nrow(processed_collars), " x ",
         ncol(processed_collars))
+```
+
+## Diagnostics
+
+```{r diagnostics}
+message("How many files generated a warning?")
+processed_collars |> 
+    group_by(warning) |> 
+    summarise(n = n()) |> 
+    mutate(percent = round(n / sum(n) * 100, 2))
+
+ggplot(processed_collars, aes(lines_read)) +
+    geom_histogram(bins = 30)
 ```
 
 ## Write out parsed 8100 metadata
