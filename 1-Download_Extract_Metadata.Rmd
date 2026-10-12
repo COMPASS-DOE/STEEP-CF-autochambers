@@ -20,12 +20,28 @@ output:
 
 ```{r setup, message=FALSE}
 library(dplyr)
+library(tidyr)
 library(stringr)
 library(tibble)
 library(readr)
 library(R.utils)
-library(rprojroot)
 library(googledrive)
+library(arrow)
+
+TMP_DIR <- "temp_data/"
+
+# This is the root folder with all dates
+# (but if local drive space is an issue, you can also use a
+# date-specific folder on google drive)
+GDRIVE_FOLDER <- "https://drive.google.com/drive/folders/1ETfZoritHHmPS0X4vXFLmjBlqMCS8OK8"
+# For example, this is the 20260604 folder
+# GDRIVE_8100_FOLDER <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
+
+PROCESSED_FILE <- file.path("Processed_Data",
+                            "SoilFluxes_8100_Metadata_processed.parquet")
+PROCESSED_FILE_FINAL <- gsub("processed.parquet", 
+                             "processed_final.parquet",
+                             PROCESSED_FILE)
 ```
 
 ## Download zipped 81x files into temporary data folder
@@ -33,60 +49,52 @@ library(googledrive)
 ```{r download-8100}
 options(googledrive_quiet = TRUE)
 
-# Find temporary data directory
-ROOT <- find_root(has_file_pattern("Rproj$"))
-tmp_dir <- file.path(ROOT, "temp_data/")
-
-GDRIVE_8100_FOLDER <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
-
 # Filter to necessary files
-files_pulse <- drive_ls(path = GDRIVE_8100_FOLDER,
+files_pulse <- drive_ls(path = GDRIVE_FOLDER,
                         recursive = TRUE,
                         pattern = "81x$")
+
+message("Found ", nrow(files_pulse), " files")
 
 download_files <- function(files_pulse) {
     # Download files to local directory
     invisible(
         lapply(seq_len(nrow(files_pulse)), function(i) {
-            outfile <- file.path(tmp_dir, files_pulse$name[i])
+            outfile <- file.path(TMP_DIR, files_pulse$name[i])
+            message(i, " ", basename(outfile))
             if(file.exists(outfile)) {
-                message("Skipped existing file ", basename(outfile))
+                message("\tskipped existing file ")
+            } else {
+                message("\tdownloading...")
+                drive_download(
+                    file = as_id(files_pulse$id[i]),
+                    path = outfile,
+                    overwrite = TRUE
+                )
             }
-            drive_download(
-                file = as_id(files_pulse$id[i]),
-                path = outfile,
-                overwrite = TRUE
-            )
         })
     )   
 }
 
 download_files(files_pulse)
-
-# List extracted 8100 files (full paths)
-file.list.8100 <- list.files(path = tmp_dir,
-                             pattern = "81x$",
-                             full.names = TRUE)
-
-message("We have ", length(file.list.8100), " files")
 ```
 
 ## Download 7810 data files
 
 ```{r download-7810}
-GDRIVE_7810_FOLDER <- "https://drive.google.com/drive/folders/12vQiSxn6l4wgJ5tpSI2TNHl7k6Jkx77s"
-
 # Filter to necessary files
 files_pulse <- drive_ls(
-  path = GDRIVE_7810_FOLDER,
+  path = GDRIVE_FOLDER,
   recursive = TRUE,
   pattern = "TG10.*data$")
+
+message("Found ", nrow(files_pulse), " files")
 
 download_files(files_pulse)
 
 # 7810 files (full paths)
-file.list.7810 <- list.files(path = tmp_dir,
-                        pattern = "TG10.*data$")
+file.list.7810 <- list.files(path = TMP_DIR,
+                             pattern = "TG10.*data$")
 
 message("We have ", length(file.list.7810), " files")
 ```
@@ -94,9 +102,15 @@ message("We have ", length(file.list.7810), " files")
 ## Split 8100 files into one-per-observation files
 
 ```{r split-8100-files}
+# List extracted 8100 files (full paths)
+file.list.8100 <- list.files(path = TMP_DIR,
+                             pattern = "81x$",
+                             full.names = TRUE)
+
+message("We have ", length(file.list.8100), " files")
+
 # Split files into multiple files, one for each chamber run, 
 # and save in temporary directory 
-
 file_counter <- 1
 for (f in file.list.8100) { 
     bnf <- basename(f)
@@ -109,13 +123,13 @@ for (f in file.list.8100) {
     l8100 <- c(l8100, length(lines) + 1) 
     
     for(i in seq_along(head(l8100, -1))) {
-       output_name <- paste0(gsub(".81x", "", bnf, fixed = TRUE),
-                             "_", i, ".txt")
-       first <- l8100[i]
-       last <- l8100[i+1] - 1
-       #message("Writing ", output_name, " (", basename(f), " lines ", first, "-", last, ")")
-       writeLines(lines[first:last], file.path(tmp_dir, output_name)) 
-       file_counter <- file_counter + 1
+        # Take the 'parent file', remove extension, add sub-file number
+        output_name <- paste0(gsub(".81x", "", bnf, fixed = TRUE),
+                              "_", i, ".txt")
+        first <- l8100[i]
+        last <- l8100[i+1] - 1
+        writeLines(lines[first:last], file.path(TMP_DIR, output_name)) 
+        file_counter <- file_counter + 1
     }
     if(is.null(i)) {
         message("NO DATA FOUND")
@@ -130,15 +144,74 @@ for (f in file.list.8100) {
 ```{r extract-metadata}
 # List extracted JSON files (full paths)
 split.file.list <- list.files(
-    path = tmp_dir,
+    path = TMP_DIR,
     pattern = "txt$",
-    full.names = TRUE,
     recursive = TRUE
 )
 
-ffi_read_LI78x0 <- function(file, model) {
-    #message("Reading ", basename(file))
-    dat_raw <- readLines(file)
+# # Don't process any files that don't have the LI-800 and were just cut at the end 
+# message("Removing cut-off files...")
+# keep <- rep(NA, length(split.file.list))
+# for(i in seq_along(keep)) {
+#     if(i %% 10000 == 0) {
+#         message("\t", i, " / ", length(keep))
+#     }
+#     x <- readLines(split.file.list[i], n = 20, warn = FALSE)
+#     first <- x[nzchar(x)][1]
+#     
+#     keep[i] <- !is.na(first) && grepl("^LI-8100", first)
+# }
+# split.file.list <- split.file.list[keep]
+
+# Look for an existing processed metadata file
+if(file.exists(PROCESSED_FILE)) {
+    message("Reading existing ", PROCESSED_FILE)
+    processed <- read_parquet(PROCESSED_FILE)    
+    message("(remove this file to re-run everything from scratch)")
+    
+    # Make sure there are entries for everything needed
+    processed |> 
+        # remove processed entries not in our split file list
+        semi_join(tibble(file = split.file.list), by = "file") |> 
+        # add rows if needed for new split files
+        complete(file = split.file.list) ->
+        processed
+} else {
+    message("Creating new ", PROCESSED_FILE)
+    processed <- tibble(SN = NA,
+                        label = NA,
+                        chamber = NA, 
+                        Vtotal = NA, 
+                        obs_length = NA, 
+                        DeadBand = NA, 
+                        TimeClosing = NA, 
+                        start_time = NA, 
+                        end_time = NA,
+                        Tcham = NA, 
+                        Pressure = NA, 
+                        V1_avg = NA,
+                        V2_avg = NA,
+                        V3_avg = NA,
+                        V4_avg = NA,
+                        file = split.file.list,
+                        warning = NA, 
+                        lines_read = NA)
+}
+
+# Go through the split files, read and process, add to processed table
+# Write out table every so often so we don't lose our progress
+model <- "LI-8100"
+message("\t0 / ", nrow(processed), " ", Sys.time())
+for(i in seq_len(nrow(processed))) {
+    fqfn <- file.path(TMP_DIR, processed$file[i])
+    if(i %% 1000 == 0) {
+        message("\t", i, " / ", nrow(processed), " ", Sys.time())
+        # intermediate save so we don't lose work if loop is interrupted
+        write_parquet(processed, PROCESSED_FILE)
+    }
+    if(!is.na(processed$lines_read[i])) next # already done
+    
+    dat_raw <- readLines(fqfn)
     
     # Make sure this is the desired model
     file_model <- substr(dat_raw[1], 1, 7)
@@ -161,14 +234,26 @@ ffi_read_LI78x0 <- function(file, model) {
     # Parse the closing time from the header and use it to make a collar field
     TimeClosing <- trimws(gsub("TimeClosing:\t", "", dat_raw[length(dat_raw)-1], fixed = TRUE))
     
+    # Log assembled data
+    processed$SN[i] <- sn
+    processed$label[i] <- label
+    processed$chamber[i] <- chamber 
+    processed$Vtotal[i] <- Vtotal 
+    processed$obs_length[i] <- obs_length 
+    processed$DeadBand[i] <- DeadBand 
+    processed$TimeClosing[i] <- TimeClosing 
+    
     # These files have 30 header lines, the column names in line 31,
     # and then the column units in line 7. We only want the names and then data
-    total_lines = countLines(file)
+    total_lines = countLines(fqfn)
     lines_to_skip <- 30
     lines_to_read <- total_lines - 30 - 25
     
+    processed$lines_read[i] <- lines_to_read
+    if(lines_to_read < 0) next
+    
     dat_read <- read.delim(
-        file = file,
+        file = fqfn,
         skip = lines_to_skip,
         nrows = lines_to_read,
         sep = "\t",
@@ -179,78 +264,57 @@ ffi_read_LI78x0 <- function(file, model) {
     end_time <- last(dat_read$Date)
     
     # Get average of environmental variables (V1-V4)
-    Tcham <- mean(dat_read$Tcham, na.rm = TRUE)
-    Pressure <- mean(dat_read$Pressure, na.rm = TRUE)
-    V1_avg <- mean(dat_read$V1, na.rm = TRUE)
-    V2_avg <- mean(dat_read$V2, na.rm = TRUE)
-    V3_avg <- mean(dat_read$V3, na.rm = TRUE)
-    V4_avg <- mean(dat_read$V4, na.rm = TRUE)
+    warn <- tryCatch({
+        Tcham <- mean(dat_read$Tcham, na.rm = TRUE)
+        Pressure <- mean(dat_read$Pressure, na.rm = TRUE)
+        V1_avg <- mean(dat_read$V1, na.rm = TRUE)
+        V2_avg <- mean(dat_read$V2, na.rm = TRUE)
+        V3_avg <- mean(dat_read$V3, na.rm = TRUE)
+        V4_avg <- mean(dat_read$V4, na.rm = TRUE)
+        FALSE
+    }, warning = function(w) {
+        TRUE
+    })
     
-    # Return assembled data
-    tibble(SN = sn,
-           label = label,
-           chamber = chamber, 
-           Vtotal = Vtotal, 
-           obs_length = obs_length, 
-           DeadBand = DeadBand, 
-           TimeClosing = TimeClosing, 
-           start_time = start_time, 
-           end_time = end_time,
-           Tcham = Tcham, 
-           Pressure = Pressure, 
-           V1_avg = V1_avg,
-           V2_avg = V2_avg,
-           V3_avg = V3_avg,
-           V4_avg = V4_avg,
-           file = basename(file))
+    # Log average conditions
+    processed$start_time[i] <- start_time 
+    processed$end_time[i] <- end_time
+    processed$Tcham[i] <- Tcham 
+    processed$Pressure[i] <- Pressure 
+    processed$V1_avg[i] <- V1_avg
+    processed$V2_avg[i] <- V2_avg
+    processed$V3_avg[i] <- V3_avg
+    processed$V4_avg[i] <- V4_avg
+    processed$warning[i] <- warn
 }
 
-ffi_read_LI8100 <- function(file) {
-    ffi_read_LI78x0(file, "LI-8100")
-}
-
-# Don't process any files that don't have the LI-800 and were just cut at the end 
-split.file.list <- split.file.list[sapply(split.file.list, function(f) {
-    x <- readLines(f, n = 20, warn = FALSE)
-    first <- x[nzchar(x)][1]
-    
-    !is.na(first) && grepl("^LI-8100", first)
-})]
-
-# Process all files and combine into a single data frame 
-message("Processing ", length(split.file.list), " split files...")
-lapply(split.file.list, ffi_read_LI8100) |> 
-    bind_rows() ->
-    alldat
-
-message("alldat is ", nrow(alldat), " x ", ncol(alldat))
+message("processed is ", nrow(processed), " x ", ncol(processed))
+write_parquet(processed, PROCESSED_FILE)
 ```
 
 ## Join with collar metadata
 
 ```{r collar-map}
 message("Reading collar map...")
-collar_metadata <- read_csv(file.path(ROOT, "metadata", "collar_map.csv"),
+collar_metadata <- read_csv(file.path("metadata", "collar_map.csv"),
                             col_types = "ccic_")
 
-alldat %>% 
+processed %>% 
     left_join(collar_metadata, 
               by = c("label" = "Collar"),
               relationship = "many-to-one") ->
-    alldat_collars
+    processed_collars
 
 ### Probably need to do some cleaning here on the temperature data 
-message("alldat_collars is ", nrow(alldat_collars), " x ", ncol(alldat_collars))
+message("processed_collars is ", nrow(processed_collars), " x ",
+        ncol(processed_collars))
 ```
 
 ## Write out parsed 8100 metadata
 
 ```{r output}
-outfile <- file.path("Processed_Data",
-                     "COMPASS_TEMPESTX_SoilFluxes_8100_Metadata_processed.csv")
-message("Writing ", outfile)
-#export as a csv to the folder that you want 
-write_csv(alldat_collars, outfile)
+message("Writing ", PROCESSED_FILE_FINAL)
+write_parquet(processed_collars, PROCESSED_FILE_FINAL)
 ```
 
 ## Reproducibility
