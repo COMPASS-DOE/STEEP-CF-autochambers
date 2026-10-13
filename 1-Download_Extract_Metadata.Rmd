@@ -19,7 +19,7 @@ library(arrow)
 library(ggplot2)
 theme_set(theme_bw())
 
-RAW_DIR <- "Raw Data/"
+RAW_DIR <- "Raw_Data/"
 
 # This is the root folder with all dates
 # (but if local drive space is an issue, you can also use a
@@ -97,26 +97,30 @@ download_files(files_pulse)
 file.list.7810 <- list.files(path = RAW_DIR,
                              pattern = "TG10.*data$")
 
-message("We have ", length(file.list.7810), " files")
+message("We have ", length(file.list.7810), " 7810 files")
 ```
 
 ## Split 8100 files into one-per-observation files
 
 ```{r split-8100-files}
 # List extracted 8100 files (full paths)
-file.list.8100 <- list.files(path = RAW_DIR,
-                             pattern = "81x$",
-                             full.names = TRUE)
+file.list.8100 <- list.files(path = RAW_DIR, pattern = "81x$")
+existing_extracted_files <- list.files(path = RAW_DIR, pattern = "*.txt$")
+existing_extracted_files <- gsub("_[0-9]+.txt$", "", existing_extracted_files)
 
-message("We have ", length(file.list.8100), " files")
+message("We have ", length(file.list.8100), " 8100 files")
 
 # Split files into multiple files, one for each chamber run, 
 # and save in temporary directory 
 file_counter <- 1
-for (f in file.list.8100) { 
-    bnf <- basename(f)
-    message("Reading ", bnf, "... ", appendLF = FALSE)
-    lines <- readLines(f)
+for (f in file.list.8100) {
+    f_no_extension <- gsub(".81x$", "", f)
+    if(f_no_extension %in% existing_extracted_files) {
+        message("Skipping ", f, " as there are already extracted files from it")
+        next
+    }
+    message("Reading ", f, "... ", appendLF = FALSE)
+    lines <- readLines(file.path(RAW_DIR, f))
     
     # Find all the lines that start with LI-8100 in this file
     l8100 <- grep("^LI-8100", lines)
@@ -135,7 +139,7 @@ for (f in file.list.8100) {
     if(is.null(i)) {
         message("NO DATA FOUND")
     } else {
-        message("wrote ", i, " split files")
+        message("wrote ", file_counter, " extracted files")
     }
 } # for f
 ```
@@ -202,6 +206,10 @@ if(file.exists(PROCESSED_FILE)) {
 # Go through the split files, read and process, add to processed table
 # Write out table every so often so we don't lose our progress
 model <- "LI-8100"
+skip_file_count <- 0
+read_file_count <- 0
+negative_line_count <- 0
+warning_count <- 0
 message("\t0 / ", nrow(processed), " ", Sys.time())
 for(i in seq_len(nrow(processed))) {
     fqfn <- file.path(RAW_DIR, processed$file[i])
@@ -210,9 +218,13 @@ for(i in seq_len(nrow(processed))) {
         # intermediate save so we don't lose work if loop is interrupted
         write_parquet(processed, PROCESSED_FILE)
     }
-    if(!is.na(processed$lines_read[i])) next # already done
+    if(!is.na(processed$lines_read[i])) {
+        skip_file_count <- skip_file_count + 1
+        next # already done
+    }
     
     dat_raw <- readLines(fqfn)
+    read_file_count <- read_file_count + 1
     
     # Make sure this is the desired model
     file_model <- substr(dat_raw[1], 1, 7)
@@ -251,7 +263,10 @@ for(i in seq_len(nrow(processed))) {
     lines_to_read <- total_lines - 30 - 25
     
     processed$lines_read[i] <- lines_to_read
-    if(lines_to_read < 0) next
+    if(lines_to_read < 0) {
+        negative_line_count <- negative_line_count + 1
+        next
+    }
     
     dat_read <- read.delim(
         file = fqfn,
@@ -274,6 +289,7 @@ for(i in seq_len(nrow(processed))) {
         V4_avg <- mean(dat_read$V4, na.rm = TRUE)
         FALSE
     }, warning = function(w) {
+        warning_count <- warning_count + 1
         TRUE
     })
     
@@ -288,6 +304,11 @@ for(i in seq_len(nrow(processed))) {
     processed$V4_avg[i] <- V4_avg
     processed$warning[i] <- warn
 }
+
+message("skip_file_count: ", skip_file_count)
+message("read_file_count: ", read_file_count)
+message("negative_line_count: ", negative_line_count)
+message("warning_count: ", warning_count)
 
 message("processed is ", nrow(processed), " x ", ncol(processed))
 write_parquet(processed, PROCESSED_FILE)
