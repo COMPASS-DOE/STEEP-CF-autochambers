@@ -100,6 +100,65 @@ file.list.7810 <- list.files(path = RAW_DIR,
 message("We have ", length(file.list.7810), " 7810 files")
 ```
 
+## Split 7810 files into per-day files
+
+```{r split-7810-files-prep}
+ALREADY_SPLIT_LIST <- file.path(RAW_DIR, "LI7810_already_split_files.csv")
+```
+
+This is a bit slow, as they're big files, so we keep track of 
+what files have already been split in a simple CSV table `r ALREADY_SPLIT_LIST`.
+
+```{r split-7810-files}
+if(file.exists(ALREADY_SPLIT_LIST)) {
+    already_split <- read_csv(ALREADY_SPLIT_LIST, col_types = "ccD")
+} else {
+    already_split <- tibble(file = character(0), hash = character(0), date = Date(0))    
+}
+
+message("Splitting ", length(file.list.7810), " LI-7810 files")
+for(f in file.list.7810) {
+    # Check whether we've already split this file; name and hash both have to match
+    dig <- digest::digest(file = file.path(RAW_DIR, f))
+    if(nrow(filter(already_split, file == f, hash == dig)) == 1) {
+        message(f, " has already been split; skipping")
+        next
+    }
+    
+    x <- ffi_read_LI7810(file.path(RAW_DIR, f))
+    days <- format(x$TIMESTAMP, "%Y%m%d")
+    for(d in unique(days)) {
+        # Split files are "LI7810_YYYYMMDD.parquet"
+        splitfile <- file.path(RAW_DIR, paste0("LI7810_", d, ".parquet"))
+        if(file.exists(splitfile)) {
+            message("\tAppending to ", splitfile)
+            prevdata <- read_parquet(splitfile)
+        } else {
+            message("\tCreating ", splitfile)
+            prevdata <- NULL
+        }
+        # Filter to this day, add any previous data, write out
+        x[days == d,] |> 
+            bind_rows(prevdata) |> 
+            distinct() |> 
+            arrange(TIMESTAMP) |> 
+            write_parquet(splitfile)
+        
+    }
+    # Record that we have split this file
+    message("\tUpdating ", ALREADY_SPLIT_LIST)
+    already_split |> 
+        # remove any older entries for this file
+        filter(!file == f) |> 
+        # ...and add a new one
+        bind_rows(tibble(file = f, hash = dig, date = Sys.Date())) ->
+        already_split
+    write_csv(already_split, file = ALREADY_SPLIT_LIST)
+}
+```
+
+
+
 ## Split 8100 files into one-per-observation files
 
 ```{r split-8100-files}

@@ -10,6 +10,8 @@
 /Raw_data/*.txt
 /Raw_data/*.81x
 /Raw_data/*.data
+/Raw_data/*.parquet
+Raw_Data/LI7810_already_split_files.csv
 
 # Rendered Rmarkdown
 *.html
