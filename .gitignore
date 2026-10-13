@@ -7,9 +7,9 @@
 .DS_Store
 
 # Temporary data
-/temp_data/*.txt
-/temp_data/*.81x
-/temp_data/*.data
+/Raw_data/*.txt
+/Raw_data/*.81x
+/Raw_data/*.data
 
 # Rendered Rmarkdown
 *.html

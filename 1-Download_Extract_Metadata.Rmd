@@ -7,17 +7,6 @@ output:
     code_folding: hide
 ---
 
-## Goals of this code:
-
-1.  Read in 8100 files - with chamber ID, start time, end time, V1-V4
-2.  Separate 8100 file into each flux
-3.  Extract metadata from each flux file into a metadata sheet
-
-**Need to figure out how to incorporate the 8100 error log 
-(remove those fluxes?)**
-
-## Setup
-
 ```{r setup, message=FALSE}
 library(dplyr)
 library(tidyr)
@@ -30,7 +19,7 @@ library(arrow)
 library(ggplot2)
 theme_set(theme_bw())
 
-TMP_DIR <- "temp_data/"
+RAW_DIR <- "Raw Data/"
 
 # This is the root folder with all dates
 # (but if local drive space is an issue, you can also use a
@@ -45,6 +34,16 @@ PROCESSED_FILE_FINAL <- gsub("processed.parquet",
                              "processed_final.parquet",
                              PROCESSED_FILE)
 ```
+
+## What this code does
+
+1. Download ALL the LI-8100 and 7810 data files from the Google Drive. Existing files will be skipped.
+2. Separate 8100 file into each flux. This generates a huge (almost 200K) number of files, but they're small.
+3. Extract metadata from each flux file into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
+4. The final metadata is saved as `r PROCESSED_FILE_FINAL`.
+
+**Need to figure out how to incorporate the 8100 error log 
+(remove those fluxes?)**
 
 ## Download zipped 81x files into temporary data folder
 
@@ -62,7 +61,7 @@ download_files <- function(files_pulse) {
     # Download files to local directory
     invisible(
         lapply(seq_len(nrow(files_pulse)), function(i) {
-            outfile <- file.path(TMP_DIR, files_pulse$name[i])
+            outfile <- file.path(RAW_DIR, files_pulse$name[i])
             message(i, " ", basename(outfile))
             if(file.exists(outfile)) {
                 message("\tskipped existing file ")
@@ -95,7 +94,7 @@ message("Found ", nrow(files_pulse), " files")
 download_files(files_pulse)
 
 # 7810 files (full paths)
-file.list.7810 <- list.files(path = TMP_DIR,
+file.list.7810 <- list.files(path = RAW_DIR,
                              pattern = "TG10.*data$")
 
 message("We have ", length(file.list.7810), " files")
@@ -105,7 +104,7 @@ message("We have ", length(file.list.7810), " files")
 
 ```{r split-8100-files}
 # List extracted 8100 files (full paths)
-file.list.8100 <- list.files(path = TMP_DIR,
+file.list.8100 <- list.files(path = RAW_DIR,
                              pattern = "81x$",
                              full.names = TRUE)
 
@@ -130,7 +129,7 @@ for (f in file.list.8100) {
                               "_", i, ".txt")
         first <- l8100[i]
         last <- l8100[i+1] - 1
-        writeLines(lines[first:last], file.path(TMP_DIR, output_name)) 
+        writeLines(lines[first:last], file.path(RAW_DIR, output_name)) 
         file_counter <- file_counter + 1
     }
     if(is.null(i)) {
@@ -146,7 +145,7 @@ for (f in file.list.8100) {
 ```{r extract-metadata}
 # List extracted JSON files (full paths)
 split.file.list <- list.files(
-    path = TMP_DIR,
+    path = RAW_DIR,
     pattern = "txt$",
     recursive = TRUE
 )
@@ -205,7 +204,7 @@ if(file.exists(PROCESSED_FILE)) {
 model <- "LI-8100"
 message("\t0 / ", nrow(processed), " ", Sys.time())
 for(i in seq_len(nrow(processed))) {
-    fqfn <- file.path(TMP_DIR, processed$file[i])
+    fqfn <- file.path(RAW_DIR, processed$file[i])
     if(i %% 1000 == 0) {
         message("\t", i, " / ", nrow(processed), " ", Sys.time())
         # intermediate save so we don't lose work if loop is interrupted
@@ -325,7 +324,7 @@ ggplot(processed_collars, aes(lines_read)) +
     geom_histogram(bins = 30)
 ```
 
-## Write out parsed 8100 metadata
+## Write out 8100 metadata
 
 ```{r output}
 message("Writing ", PROCESSED_FILE_FINAL)
