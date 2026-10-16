@@ -104,18 +104,18 @@ message("We have ", length(file.list.7810), " 7810 files")
 
 ```{r split-7810-files-prep}
 ALREADY_SPLIT_LIST <- file.path(RAW_DIR, "LI7810_already_split_files.csv")
+
+if(file.exists(ALREADY_SPLIT_LIST)) {
+    already_split <- read_csv(ALREADY_SPLIT_LIST, col_types = "ccD")
+} else {
+    already_split <- tibble(file = character(0), hash = character(0), date = Date(0))    
+}
 ```
 
 This is a bit slow, as they're big files, so we keep track of 
 what files have already been split in a simple CSV table `r ALREADY_SPLIT_LIST`.
 
 ```{r split-7810-files}
-if(file.exists(ALREADY_SPLIT_LIST)) {
-    already_split <- read_csv(ALREADY_SPLIT_LIST, col_types = "ccD")
-} else {
-    already_split <- tibble(file = character(0), hash = character(0), date = Date(0))    
-}
-
 message("Splitting ", length(file.list.7810), " LI-7810 files")
 for(f in file.list.7810) {
     # Check whether we've already split this file; name and hash both have to match
@@ -157,138 +157,12 @@ for(f in file.list.7810) {
 }
 ```
 
-## Split 8100 files into one-per-observation files
+## Split 8100 files into individual observations and  files
 
-```{r split-8100-files}
-# List extracted 8100 files (full paths)
-file.list.8100 <- list.files(path = RAW_DIR, pattern = "81x$")
-existing_extracted_files <- list.files(path = RAW_DIR, 
-                                       pattern = "*.txt$",
-                                       recursive = TRUE)
-existing_extracted_files <- gsub("_[0-9]+.txt$", "", existing_extracted_files)
-
-message("We have ", length(file.list.8100), " LI-8100 files")
-
-# Split files into multiple files, one for each chamber run, 
-# and save into subfolders in the temporary directory 
-file_counter <- 1
-for (f in file.list.8100) {
-    f_no_extension <- gsub(".81x$", "", f)
-    if(f_no_extension %in% existing_extracted_files) {
-        message("Skipping ", f, " as there are already extracted files from it")
-        next
-    }
-    message("Reading ", f, "... ")
-    lines <- readLines(file.path(RAW_DIR, f))
-    
-    # Find all the lines that start with LI-8100 in this file
-    l8100 <- grep("^LI-8100", lines)
-    # Add one at end so that 'last' calculation below works for final entry
-    l8100 <- c(l8100, length(lines) + 1) 
-    
-    if(!dir.exists(file.path(RAW_DIR, f_no_extension))) {
-        message("\tCreating folder for ", f_no_extension)
-        dir.create(file.path(RAW_DIR, f_no_extension))
-    }
-    
-    for(i in seq_along(head(l8100, -1))) {
-        # Take the 'parent file', remove extension, add sub-file number
-        output_name <- paste0(f_no_extension, "_", i, ".txt")
-        first <- l8100[i]
-        last <- l8100[i+1] - 1
-        writeLines(lines[first:last], file.path(RAW_DIR, f_no_extension, output_name)) 
-        file_counter <- file_counter + 1
-    }
-    if(is.null(i)) {
-        message("NO DATA FOUND")
-    } else {
-        message("\tWrote ", file_counter, " extracted files")
-    }
-} # for f
-```
-
-## Extract metadata from JSONs
-
-```{r extract-metadata}
-# List extracted JSON files (full paths)
-split.file.list <- list.files(
-    path = RAW_DIR,
-    pattern = "_[0-9]+\\.txt$",
-    recursive = TRUE
-)
-
-# # Don't process any files that don't have the LI-800 and were just cut at the end 
-# message("Removing cut-off files...")
-# keep <- rep(NA, length(split.file.list))
-# for(i in seq_along(keep)) {
-#     if(i %% 10000 == 0) {
-#         message("\t", i, " / ", length(keep))
-#     }
-#     x <- readLines(split.file.list[i], n = 20, warn = FALSE)
-#     first <- x[nzchar(x)][1]
-#     
-#     keep[i] <- !is.na(first) && grepl("^LI-8100", first)
-# }
-# split.file.list <- split.file.list[keep]
-
-# Look for an existing processed metadata file
-if(file.exists(PROCESSED_FILE)) {
-    message("Reading existing ", PROCESSED_FILE)
-    processed <- read_parquet(PROCESSED_FILE)    
-    message("(remove this file to re-run everything from scratch)")
-    
-    # Make sure there are entries for everything needed
-    processed |> 
-        # remove processed entries not in our split file list
-        semi_join(tibble(file = split.file.list), by = "file") |> 
-        # add rows if needed for new split files
-        complete(file = split.file.list) ->
-        processed
-} else {
-    message("Creating new ", PROCESSED_FILE)
-    processed <- tibble(SN = NA,
-                        label = NA,
-                        chamber = NA, 
-                        Vtotal = NA, 
-                        obs_length = NA, 
-                        DeadBand = NA, 
-                        TimeClosing = NA, 
-                        start_time = NA, 
-                        end_time = NA,
-                        Tcham = NA, 
-                        Pressure = NA, 
-                        V1_avg = NA,
-                        V2_avg = NA,
-                        V3_avg = NA,
-                        V4_avg = NA,
-                        file = split.file.list,
-                        warning = NA, 
-                        lines_read = NA)
-}
-
-# Go through the split files, read and process, add to processed table
-# Write out table every so often so we don't lose our progress
-model <- "LI-8100"
-skip_file_count <- 0
-read_file_count <- 0
-negative_line_count <- 0
-warning_count <- 0
-message("\t0 / ", nrow(processed), " ", Sys.time())
-for(i in seq_len(nrow(processed))) {
-    fqfn <- file.path(RAW_DIR, processed$file[i])
-    if(i %% 1000 == 0) {
-        message("\t", i, " / ", nrow(processed), " ", Sys.time())
-        # intermediate save so we don't lose work if loop is interrupted
-        write_parquet(processed, PROCESSED_FILE)
-    }
-    if(!is.na(processed$lines_read[i])) {
-        skip_file_count <- skip_file_count + 1
-        next # already done
-    }
-    
-    dat_raw <- readLines(fqfn)
-    read_file_count <- read_file_count + 1
-    
+```{r split-8100-files-prep}
+# Helper function: extract data from one observation in a LI-8100 file
+# dat_raw is a vector of lines from the file
+process_obs <- function(dat_raw, model) {
     # Make sure this is the desired model
     file_model <- substr(dat_raw[1], 1, 7)
     if(file_model != model) stop("This does not appear to be a ", model, " file!")
@@ -311,70 +185,128 @@ for(i in seq_len(nrow(processed))) {
     TimeClosing <- trimws(gsub("TimeClosing:\t", "", dat_raw[length(dat_raw)-1], fixed = TRUE))
     
     # Log assembled data
-    processed$SN[i] <- sn
-    processed$label[i] <- label
-    processed$chamber[i] <- chamber 
-    processed$Vtotal[i] <- Vtotal 
-    processed$obs_length[i] <- obs_length 
-    processed$DeadBand[i] <- DeadBand 
-    processed$TimeClosing[i] <- TimeClosing 
+    extracted <- tibble(SN = sn,
+                        label = label,
+                        chamber = chamber,
+                        Vtotal = Vtotal,
+                        obs_length = obs_length,
+                        DeadBand = DeadBand,
+                        TimeClosing = TimeClosing)
     
     # These files have 30 header lines, the column names in line 31,
     # and then the column units in line 7. We only want the names and then data
-    total_lines = countLines(fqfn)
+    total_lines = length(dat_raw)
     lines_to_skip <- 30
     lines_to_read <- total_lines - 30 - 25
     
-    processed$lines_read[i] <- lines_to_read
+    extracted$lines_read <- lines_to_read
     if(lines_to_read < 0) {
-        negative_line_count <- negative_line_count + 1
-        next
+        negative_line_count <<- negative_line_count + 1
+        return(extracted)
     }
     
-    dat_read <- read.delim(
-        file = fqfn,
+    # We read directly from the string vector; much faster than writing
+    # out and reading back in
+    dat_read <- read.delim(textConnection(dat_raw),
         skip = lines_to_skip,
         nrows = lines_to_read,
         sep = "\t",
         header = TRUE)
     
     # Get first and last timestamp
-    start_time <- first(dat_read$Date)
-    end_time <- last(dat_read$Date)
+    extracted$start_time <- first(dat_read$Date)
+    extracted$end_time <- last(dat_read$Date)
     
     # Get average of environmental variables (V1-V4)
-    warn <- tryCatch({
-        Tcham <- mean(dat_read$Tcham, na.rm = TRUE)
-        Pressure <- mean(dat_read$Pressure, na.rm = TRUE)
-        V1_avg <- mean(dat_read$V1, na.rm = TRUE)
-        V2_avg <- mean(dat_read$V2, na.rm = TRUE)
-        V3_avg <- mean(dat_read$V3, na.rm = TRUE)
-        V4_avg <- mean(dat_read$V4, na.rm = TRUE)
+    warning_occurred <- tryCatch({
+        extracted$Tcham <- mean(dat_read$Tcham, na.rm = TRUE)
+        extracted$Pressure <- mean(dat_read$Pressure, na.rm = TRUE)
+        extracted$V1_avg <- mean(dat_read$V1, na.rm = TRUE)
+        extracted$V2_avg <- mean(dat_read$V2, na.rm = TRUE)
+        extracted$V3_avg <- mean(dat_read$V3, na.rm = TRUE)
+        extracted$V4_avg <- mean(dat_read$V4, na.rm = TRUE)
         FALSE
     }, warning = function(w) {
-        warning_count <- warning_count + 1
+        warning_count <<- warning_count + 1
         TRUE
     })
     
-    # Log average conditions
-    processed$start_time[i] <- start_time 
-    processed$end_time[i] <- end_time
-    processed$Tcham[i] <- Tcham 
-    processed$Pressure[i] <- Pressure 
-    processed$V1_avg[i] <- V1_avg
-    processed$V2_avg[i] <- V2_avg
-    processed$V3_avg[i] <- V3_avg
-    processed$V4_avg[i] <- V4_avg
-    processed$warning[i] <- warn
+    extracted$warning <-  warning_occurred
+    
+    return(extracted)
 }
 
-message("skip_file_count: ", skip_file_count)
-message("read_file_count: ", read_file_count)
-message("negative_line_count: ", negative_line_count)
-message("warning_count: ", warning_count)
 
-message("processed is ", nrow(processed), " x ", ncol(processed))
-write_parquet(processed, PROCESSED_FILE)
+# List extracted 8100 files
+file.list.8100 <- list.files(path = RAW_DIR, pattern = "81x$")
+message("We have ", length(file.list.8100), " LI-8100 files")
+
+# Look for an existing processed metadata file
+if(file.exists(PROCESSED_FILE)) {
+    message("Reading existing ", PROCESSED_FILE)
+    processed <- read_parquet(PROCESSED_FILE)    
+    message("(remove this file to re-run everything from scratch)")
+} else {
+    message("Creating new ", PROCESSED_FILE)
+    processed <- tibble()
+}
+```
+
+
+```{r split-8100-files}
+
+# Go through the split files, read and process, add to processed table
+# Write out table every so often so we don't lose our progress
+skip_obs_count <- 0
+processed_obs_count <- 0
+negative_line_count <- 0
+warning_count <- 0
+
+for (i in seq_along(file.list.8100)) {
+    f <- file.list.8100[i]
+    message(i, "/", length(file.list.8100), " Reading ", f, "... ")
+    lines <- readLines(file.path(RAW_DIR, f))
+    f_no_extension <- gsub(".81x$", "", f)
+    
+    # Find all the lines that start with LI-8100 in this file
+    l8100 <- grep("^LI-8100", lines)
+    n_obs <- length(l8100)
+    # Add one at end so that 'last' calculation below works for final entry
+    l8100 <- c(l8100, length(lines) + 1) 
+    
+    # How many result rows are already in the processed table? If identical
+    # to numbers of observations to process, assume we already have this file
+    # and move on
+    if(nrow(processed) > 0) {
+        n_processed <- length(grep(f_no_extension, processed$obs, fixed = TRUE))
+        if(n_processed == n_obs) {
+            message("\t", n_processed, " observations already processed; moving on") 
+            next
+        } else {
+            # remove any old data for this file (in case it was previously
+            # partially processed, for example)
+            processed <- filter(processed, !grepl(f_no_extension, obs, fixed = TRUE))
+        }
+    }
+    
+    # Process each observation, saving results in a list
+    file_results <- list()
+    for(i in seq_along(head(l8100, -1))) {
+        first <- l8100[i]
+        last <- l8100[i+1] - 1
+        file_results[[i]] <- process_obs(lines[first:last], model = "LI-8100")
+        file_results[[i]]$obs <- i
+    }
+    processed_obs_count <- processed_obs_count + n_obs
+    file_dat <- bind_rows(file_results) |> mutate(file = f_no_extension)
+    
+    # Add to processed data and write out
+    processed |> 
+        bind_rows(file_dat) -> 
+        processed
+    write_parquet(processed, PROCESSED_FILE)
+    message("\tProcessed ", n_obs, " observations")
+} # for i
 ```
 
 ## Join with collar metadata

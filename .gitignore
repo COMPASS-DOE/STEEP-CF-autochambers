@@ -7,7 +7,6 @@
 .DS_Store
 
 # Temporary data
-/Raw_data/*/*.txt
 /Raw_data/*.81x
 /Raw_data/*.data
 /Raw_data/*.parquet
