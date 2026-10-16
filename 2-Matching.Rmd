@@ -22,6 +22,7 @@ library(dplyr)
 library(tidyr)
 library(readr)
 library(fluxfinder)
+library(arrow)
 
 DATE_TO_PROCESS <- ymd("2026-06-08")
 
@@ -36,15 +37,16 @@ PROCESSED_FILE_FINAL <-
 
 ```{r match-prep}
 # for each timestamp x, determine the y timestamps that fall within
-# x and x + length
-# returns a logical vector of length y
-quick_match_logical <- function(x, y, length = 90) {
+# x - left_extra and x + length + right_extra
+# returns a numeric vector of length y giving which x matched; NA otherwise
+quick_match_numeric <- function(x, y, length = 90,
+                                left_extra = 0, right_extra = 0) {
     stopifnot(tz(x) == tz(y)) # defensive assertion
-    match <- rep(FALSE, length(y))
-    for(ts in x) {
-        match <- match | (y >= ts & y < ts + length)
+    matches <- rep(NA_integer_, length(y))
+    for(i in seq_along(x)) {
+        matches[(y >= x[i] - left_extra & y < x[i] + length + right_extra)] <- i
     }
-    return(match)
+    return(matches)
 }
 # two observations in the metadata...
 testx <- ymd_hms("2026-10-16 11:31:00", "2026-10-16 11:35:00")
@@ -53,19 +55,8 @@ testy <- seq.POSIXt(from = ymd_hms("2026-10-16 11:30:00"),
                     to = ymd_hms("2026-10-16 11:40:00"),
                     by = "1 sec")
 # should be 2 x 90 seconds = 180 matches at the correct times
-stopifnot(sum(quick_match_logical(testx, testy)) == 180)
+stopifnot(sum(!is.na(quick_match_numeric(testx, testy))) == 180)
 
-# for each timestamp x, determine the y timestamps that fall within
-# x and x + length
-# returns a numeric vector of length y giving which x matched; NA otherwise
-quick_match_numeric <- function(x, y, length = 90) {
-    stopifnot(tz(x) == tz(y)) # defensive assertion
-    match <- rep(NA_integer_, length(y))
-    for(i in seq_along(x)) {
-        match[(y >= x[i] & y < x[i] + length)] <- i
-    }
-    return(match)
-}
 
 # Metadata
 message("Reading ", basename(PROCESSED_FILE_FINAL))
@@ -117,19 +108,44 @@ if(any(is.na(li7810dat$Plot))) {
 for(pl in unique(md$Plot)) {
     md |> 
         filter(Plot == pl) |> 
+        arrange(start_time) |> 
         select(label, start_time, end_time) ->
         md_plot
+    md_plot$group <- seq_len(nrow(md_plot))
     li7810dat |> 
         filter(Plot == pl) |> 
-        select(TIMESTAMP, CO2) ->
+        select(TIMESTAMP, CO2) |> 
+        arrange(TIMESTAMP) |> 
+        mutate(hour = hour(TIMESTAMP)) ->
         li7810_plot
     message(DATE_TO_PROCESS, " ", pl)
     message("\tmetadata:  ", nrow(md_plot), " x ", ncol(md_plot))
     message("\tconcentrations: ", nrow(li7810_plot), " x ", ncol(li7810_plot))
 
-  li7810_plot$match <- quick_match_numeric(md_plot$start_time, li7810_plot$TIMESTAMP)
+    li7810_plot$group <- 
+        quick_match_numeric(md_plot$start_time, 
+                            li7810_plot$TIMESTAMP,
+                            length = 90)
+    li7810_plot$context_group <- 
+        quick_match_numeric(md_plot$start_time,
+                            li7810_plot$TIMESTAMP, 
+                            length = 90,
+                            left_extra = 60, right_extra = 60)
+    
+  li7810_plot |> 
+      left_join(md_plot, by = c("context_group" = "group")) |> 
+      mutate(start_time_offset = as.numeric(TIMESTAMP - start_time)) -> x
   
-  # Think about how to visualize this effectively
+  x |> 
+      filter(hour %% 4 == 0) |> 
+      ggplot(aes(start_time_offset, CO2, color = is.na(group))) + 
+      geom_point(size = 0.5, na.rm = TRUE) + 
+      geom_vline(xintercept = 0, linetype = 2) +
+      geom_vline(xintercept = 90, linetype = 2) +
+      facet_wrap(~hour, ncol = 3) + 
+      guides(color = "none") +
+      xlab("Time relative to metdata start_time (s)") +
+      ggtitle(paste(DATE_TO_PROCESS, pl, "(select hours)"))
   
 }
 
