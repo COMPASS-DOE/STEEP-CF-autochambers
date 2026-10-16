@@ -121,32 +121,40 @@ for(pl in unique(md$Plot)) {
     message(DATE_TO_PROCESS, " ", pl)
     message("\tmetadata:  ", nrow(md_plot), " x ", ncol(md_plot))
     message("\tconcentrations: ", nrow(li7810_plot), " x ", ncol(li7810_plot))
-
+    
+    # Find the metadata group for each row in the 7810 observations,
+    # as well as the 'context window' group, which is the group with +/-
+    # some amount of time on either side
     li7810_plot$group <- 
         quick_match_numeric(md_plot$start_time, 
                             li7810_plot$TIMESTAMP,
                             length = 90)
-    li7810_plot$context_group <- 
+    li7810_plot$context_window <- 
         quick_match_numeric(md_plot$start_time,
                             li7810_plot$TIMESTAMP, 
                             length = 90,
                             left_extra = 60, right_extra = 60)
     
-  li7810_plot |> 
-      left_join(md_plot, by = c("context_group" = "group")) |> 
-      mutate(start_time_offset = as.numeric(TIMESTAMP - start_time)) -> x
-  
-  x |> 
-      filter(hour %% 4 == 0) |> 
-      ggplot(aes(start_time_offset, CO2, color = is.na(group))) + 
-      geom_point(size = 0.5, na.rm = TRUE) + 
-      geom_vline(xintercept = 0, linetype = 2) +
-      geom_vline(xintercept = 90, linetype = 2) +
-      facet_wrap(~hour, ncol = 3) + 
-      guides(color = "none") +
-      xlab("Time relative to metdata start_time (s)") +
-      ggtitle(paste(DATE_TO_PROCESS, pl, "(select hours)"))
-  
+    # For plotting, we want to associate the start time with each
+    # context window, so that each group's data can be plotted with
+    # context (previous and following 7810 data that do not, currently,
+    # 'match')
+    li7810_plot |> 
+        left_join(md_plot, by = c("context_window" = "group")) |> 
+        mutate(start_time_offset = as.numeric(TIMESTAMP - start_time)) -> x
+    
+    x |> 
+        # the clocks won't drift super fast; for plotting clarity, down-select
+        filter(hour %% 4 == 0) |> 
+        ggplot(aes(start_time_offset, CO2, color = is.na(group))) + 
+        geom_point(size = 0.5, na.rm = TRUE) + 
+        geom_vline(xintercept = 0, linetype = 2) +
+        geom_vline(xintercept = 90, linetype = 2) +
+        facet_wrap(~hour, ncol = 3) + 
+        guides(color = "none") +
+        xlab("Time relative to metadata start_time (s)") +
+        ggtitle(paste(DATE_TO_PROCESS, pl, "(select hours)"))
+    
 }
 
 ```
