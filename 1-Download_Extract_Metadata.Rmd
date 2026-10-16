@@ -126,6 +126,7 @@ for(f in file.list.7810) {
     }
     
     x <- ffi_read_LI7810(file.path(RAW_DIR, f))
+    x$TIMESTAMP <- force_tz(x$TIMESTAMP, "EST")
     days <- format(x$TIMESTAMP, "%Y%m%d")
     for(d in unique(days)) {
         # Split files are "LI7810_YYYYMMDD.parquet"
