@@ -157,20 +157,20 @@ for(f in file.list.7810) {
 }
 ```
 
-
-
 ## Split 8100 files into one-per-observation files
 
 ```{r split-8100-files}
 # List extracted 8100 files (full paths)
 file.list.8100 <- list.files(path = RAW_DIR, pattern = "81x$")
-existing_extracted_files <- list.files(path = RAW_DIR, pattern = "*.txt$")
+existing_extracted_files <- list.files(path = RAW_DIR, 
+                                       pattern = "*.txt$",
+                                       recursive = TRUE)
 existing_extracted_files <- gsub("_[0-9]+.txt$", "", existing_extracted_files)
 
-message("We have ", length(file.list.8100), " 8100 files")
+message("We have ", length(file.list.8100), " LI-8100 files")
 
 # Split files into multiple files, one for each chamber run, 
-# and save in temporary directory 
+# and save into subfolders in the temporary directory 
 file_counter <- 1
 for (f in file.list.8100) {
     f_no_extension <- gsub(".81x$", "", f)
@@ -178,7 +178,7 @@ for (f in file.list.8100) {
         message("Skipping ", f, " as there are already extracted files from it")
         next
     }
-    message("Reading ", f, "... ", appendLF = FALSE)
+    message("Reading ", f, "... ")
     lines <- readLines(file.path(RAW_DIR, f))
     
     # Find all the lines that start with LI-8100 in this file
@@ -186,19 +186,23 @@ for (f in file.list.8100) {
     # Add one at end so that 'last' calculation below works for final entry
     l8100 <- c(l8100, length(lines) + 1) 
     
+    if(!dir.exists(file.path(RAW_DIR, f_no_extension))) {
+        message("\tCreating folder for ", f_no_extension)
+        dir.create(file.path(RAW_DIR, f_no_extension))
+    }
+    
     for(i in seq_along(head(l8100, -1))) {
         # Take the 'parent file', remove extension, add sub-file number
-        output_name <- paste0(gsub(".81x", "", bnf, fixed = TRUE),
-                              "_", i, ".txt")
+        output_name <- paste0(f_no_extension, "_", i, ".txt")
         first <- l8100[i]
         last <- l8100[i+1] - 1
-        writeLines(lines[first:last], file.path(RAW_DIR, output_name)) 
+        writeLines(lines[first:last], file.path(RAW_DIR, f_no_extension, output_name)) 
         file_counter <- file_counter + 1
     }
     if(is.null(i)) {
         message("NO DATA FOUND")
     } else {
-        message("wrote ", file_counter, " extracted files")
+        message("\tWrote ", file_counter, " extracted files")
     }
 } # for f
 ```
@@ -209,7 +213,7 @@ for (f in file.list.8100) {
 # List extracted JSON files (full paths)
 split.file.list <- list.files(
     path = RAW_DIR,
-    pattern = "txt$",
+    pattern = "_[0-9]+\\.txt$",
     recursive = TRUE
 )
 
