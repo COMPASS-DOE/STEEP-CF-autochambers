@@ -134,3 +134,29 @@ These include
 * [Apache Parquet files](https://parquet.apache.org) for the large 7810 data and 8100 metadata files
 * Caches (effectively what many of those intermediate files are)
 * `readr::read_csv()` instead of base R's `read.csv()`
+* Don't write unnecessary files (e.g. the `txt` single-observation files); just process them immmediately
+
+## Quick start guide
+
+### Step 1
+
+The first script can be run by rendering `1-Download_Extract_Metadata.Rmd`. 
+It will take a while when run for the first time! But you can
+stop it anytime and it will more or less pick up where it left
+off when re-run.
+
+Note that I have committed `SoilFluxes_8100_Metadata_processed_final.parquet`
+to the repository (in `Processed_Data/`) -- this, along with the single-day 7810 files, is the major and time-consuming 
+output of script 1.
+
+## Quick start guide
+
+### Step 2
+
+The second script is a plain `.R` file and is _interactive_
+(it will ask the user questions). When you have the single-day
+LI7810 files ready, it can be used. 
+
+However, I have committed
+one of these single-day files to the repo, `LI7810_20240608.parquet`,
+allowing script 2 to be tried out immmediately.
