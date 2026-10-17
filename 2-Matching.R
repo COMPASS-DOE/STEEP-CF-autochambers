@@ -24,6 +24,7 @@ PROCESSED_FILE_FINAL <-
 
 ## Read raw 7810 data - prep ----
 
+# Utility function: quick_match_numeric()
 # for each timestamp x, determine the y timestamps that fall within
 # x - left_extra and x + length + right_extra
 # returns a numeric vector of length y giving which x matched; NA otherwise
@@ -36,6 +37,7 @@ quick_match_numeric <- function(x, y, length = 90,
     }
     return(matches)
 }
+# Test code
 # two observations in the metadata...
 testx <- ymd_hms("2026-10-16 11:31:00", "2026-10-16 11:35:00")
 # ...10 minutes of data
@@ -45,30 +47,33 @@ testy <- seq.POSIXt(from = ymd_hms("2026-10-16 11:30:00"),
 # should be 2 x 90 seconds = 180 matches at the correct times
 stopifnot(sum(!is.na(quick_match_numeric(testx, testy))) == 180)
 
-#
+# Utility function: search_offsets()
+# Given a series of observations at specific times (i.e., LI7810), and nominal
+# start times of each observation (LI8100), try varying time offsets between
+# the two clocks to determine what gives the best results--specifically,
+# the highest average amount of variance explained
 search_offsets <- function(recorded_start_times, obs_time, obs_x, mst_length) {
     stopifnot(length(obs_time) == length(obs_x))
     msmt_indices <- 0:(mst_length - 1)
 
     # THE OFFSET IS WHAT NEEDS TO BE **ADDED** TO THE RECORDED START TIME
-    # Search every 5 seconds within ± 2 minutes...
+    # We search every 5 seconds within ± 2 minutes...
     search_offsets1 <- paste(seq(0, 2 * 60, by = 5), "sec")
     # ...and every 10 seconds from ±2 to ±10 minutes
     search_offsets2 <- paste(seq(2 * 60, 10 * 60, by = 10), "sec")
     offsets_positive <- as.period(c(search_offsets1, search_offsets2))
     offsets <- c(offsets_positive, -offsets_positive)
 
-    message(length(offsets), " offsets to test")
+    # Set up results data frame with one row per offset
     results <- tibble(offset = sort(unique(offsets)),
                       mean_R2 = NA_real_)
+    message(nrow(results), " offsets to test")
+
     # For each potential offset, adjust start times and fit models
-    i_vals <- seq_len(nrow(results))
-    i_prints <- floor(seq.int(from = 10, 100, by = 10) / 100 * nrow(results))
-    for(i in i_vals) {
+    pb <- txtProgressBar(min = 1, max = nrow(results), style = 3)
+    for(i in seq_len(nrow(results))) {
+        setTxtProgressBar(pb, i)
         i_offset <- results$offset[i]
-        if(i %in% i_prints) {
-            message(round(i / nrow(results) * 100), "%...", appendLF = FALSE)
-        }
         test_start_times <- recorded_start_times + i_offset
         # For each test start time, fit a model and record R2
         r2 <- 0.0
@@ -183,34 +188,66 @@ for(pl in plots) {
         filter(mean_R2 == max(mean_R2)) |>
         summarise(mean_offset = mean(offset)) |>
         pull(mean_offset) ->
-        offset
+        alg_offset
+    current_offset <- alg_offset
+    offset_type <- "algorithmic"
 
-    p <- ggplot(offset_results, aes(x = offset, y = mean_R2)) +
+    p_offset_results <- ggplot(offset_results, aes(x = offset, y = mean_R2)) +
         geom_point() +
         xlab("Tested clock offset (s)") +
-        ggtitle(paste(DATE_TO_PROCESS, pl, "offset analysis; best =", offset))
-    print(p)
+        ggtitle(paste(DATE_TO_PROCESS, pl, "offset analysis; best =", alg_offset))
+    print(p_offset_results)
 
+    # Show user the data for this plot and date, with vertical lines
+    # to mark the algorithmic and (if desired, manual) offset
+    done <- FALSE
+    while(!done) {
+        # the clocks won't drift super fast; for plotting clarity,
+        # only show a subselection of hours in the day
+        li7810_plotgroups |>
+            filter(hour %% 4 == 0) |>
+            group_by(hour) |>
+            mutate(CO2 = CO2 - min(CO2)) |>
+            ggplot(aes(start_time_offset, CO2, color = is.na(group))) +
+            geom_point(size = 0.5, na.rm = TRUE) +
+            # the current measurement mapping
+            geom_vline(xintercept = 0, linetype = 1) +
+            geom_vline(xintercept = 90, linetype = 1) +
+            # proposed mapping with offset
+            geom_vline(xintercept = 0 + alg_offset, linetype = 2, color = "red") +
+            geom_vline(xintercept = 90 + alg_offset, linetype = 2, color = "red") +
+            facet_wrap(~hour, ncol = 3) +
+            guides(color = "none") +
+            xlab("LI7810 time relative to metadata start_time (s)") +
+            ylab("Relative CO2 (ppm)") ->
+            p_plot_offset
 
-    # the clocks won't drift super fast; for plotting clarity, down-select
-    li7810_plotgroups |>
-        filter(hour %% 4 == 0) |>
-        group_by(hour) |>
-        mutate(CO2 = CO2 - min(CO2)) |>
-        ggplot(aes(start_time_offset, CO2, color = is.na(group))) +
-        geom_point(size = 0.5, na.rm = TRUE) +
-        # the current measurement mapping
-        geom_vline(xintercept = 0, linetype = 1) +
-        geom_vline(xintercept = 90, linetype = 1) +
-        # proposed mapping with offset
-        geom_vline(xintercept = 0 + offset, linetype = 2, color = "red") +
-        geom_vline(xintercept = 90 + offset, linetype = 2, color = "red") +
-        facet_wrap(~hour, ncol = 3) +
-        guides(color = "none") +
-        xlab("LI7810 time relative to metadata start_time (s)") +
-        ylab("Relative CO2 (ppm)") +
-        ggtitle(paste(DATE_TO_PROCESS, pl, "(select hours); proposed offset of",
-                      offset, "in red")) ->
-        p
-    print(p)
+        title <- paste(DATE_TO_PROCESS, pl, "(select hours)")
+        subtitle <- paste("Metadata times in black;",
+                          "auto-offset of", alg_offset, "in red")
+        if(offset_type == "manual") {
+            p_plot_offset <- p_plot_offset +
+                geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "pink") +
+                geom_vline(xintercept = 90 + current_offset, linetype = 2, color = "pink")
+            subtitle <- paste0(subtitle, "; manual offset of ", current_offset, " in pink")
+        }
+        p_plot_offset <- p_plot_offset + ggtitle(title, subtitle = subtitle)
+        print(p_plot_offset)
+
+        done <- askYesNo(paste0(pl, ": accept ", offset_type, " offset of ",
+                               current_offset, "? "))
+        if(!done) {
+            readline(paste(pl, ": manual offset (0=none): ")) |>
+                as.numeric() ->
+                current_offset
+            offset_type <- "manual"
+        }
+
+    }
+
+    # Save plots and chosen offset
+
+    # Show each collar; ask if any collar-specific offset?
+    # Save plots and collar-specifc offset(s)
+
 }
