@@ -11,6 +11,8 @@
 /Raw_data/*.data
 /Raw_data/*.parquet
 Raw_Data/LI7810_already_split_files.csv
+# have one single-day file to the repo as an example
+!Raw_Data/LI7810_20240608.parquet
 
 # Output plots
 /Processed_Data/*.pdf
