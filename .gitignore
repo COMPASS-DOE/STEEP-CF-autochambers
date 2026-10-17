@@ -12,6 +12,9 @@
 /Raw_data/*.parquet
 Raw_Data/LI7810_already_split_files.csv
 
+# Output plots
+/Processed_Data/*.pdf
+
 # Rendered Rmarkdown
 *.html
 *.tex
