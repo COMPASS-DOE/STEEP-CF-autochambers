@@ -19,3 +19,6 @@ Raw_Data/LI7810_already_split_files.csv
 *.html
 *.tex
 *.log
+
+# revealjs slides
+/change_summary_files

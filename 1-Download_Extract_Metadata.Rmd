@@ -13,7 +13,6 @@ library(tidyr)
 library(stringr)
 library(tibble)
 library(readr)
-library(R.utils)
 library(googledrive)
 library(arrow)
 library(ggplot2)
@@ -45,7 +44,7 @@ PROCESSED_FILE_FINAL <- gsub("processed.parquet",
 **Need to figure out how to incorporate the 8100 error log 
 (remove those fluxes?)**
 
-## Download zipped 81x files into temporary data folder
+## Download zipped 81x files into raw data folder
 
 ```{r download-8100}
 options(googledrive_quiet = TRUE)
@@ -158,7 +157,7 @@ for(f in file.list.7810) {
 }
 ```
 
-## Split 8100 files into individual observations and  files
+## Split 8100 files into observations and extract info
 
 ```{r split-8100-files-prep}
 # Helper function: extract data from one observation in a LI-8100 file

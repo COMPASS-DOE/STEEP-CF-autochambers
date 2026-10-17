@@ -1,11 +1,11 @@
-# 2-Matching.R
+# 2-Clock_Offsets.R
 # BBL October 2026
 
 ## Goals of this code:
 
 # 1.  Provide fast and easy matching to align 8100 and 7810 timestamps
 
-message("Welcome to 2-Matching.R")
+message("Welcome to 2-Clock_Offsets.R")
 
 ## Setup ----
 
@@ -15,7 +15,6 @@ library(lubridate)
 library(dplyr)
 library(tidyr)
 library(readr)
-library(fluxfinder)
 library(arrow)
 
 MSMT_LENGTH <- 90

@@ -1,0 +1,136 @@
+---
+title: "change_summary"
+format: revealjs
+---
+
+## Problem
+
+The current workflow isn't scaling well; it's too slow to handle 
+autochamber LI-8100/7810 data.
+
+## High level changes 
+
+The `bbl-tweaks` branch has many changes, but at a high level,
+they are, in descending (imho) order of importance,
+
+* Separate functionality
+* Do as much prep work as possible _before_ the user-time-intensive steps
+* Do work only once; save incremental progress
+* Keep data in data files and code in code files
+* Use higher-performance tools, formats, etc.
+
+## Separate functionality & prep work
+
+The first script is `1-Download_Extract_Metadata.Rmd`:
+
+* Downloads _all_ 8100 and 7810 files
+* Splits the large 7810 files into per-day files (LI7810_20240613.parquet, LI7810_20240614.parquet, etc.)
+* Splits the 8100 files into individual observations and compiles extracted metadata into a single file
+* Runs some basic diagnostics
+
+## Separate functionality & prep work
+
+The second script is `2-Clock_Offsets.R`:
+
+* Reads the metadata prepared by script 1
+* Reads the day-specific 7810 data file
+* For each plot, compute optimal clock offset for best fit between metadata (8100) times and measurement (7810) times based on linear trends of CO2
+* Allows the user to accept/reject this and substitute their own value
+* Allows the user to provide collar-specific offsets if needed
+
+## Do work only once
+
+Skip already-downloaded files
+
+```
+if(file.exists(outfile)) {
+
+	message("\tskipped existing file ")
+	
+} else {
+
+	message("\tdownloading...")
+
+# (proceed to download the file...)
+```
+
+## Do work only once
+
+Don't do work we've already done
+
+```
+for(f in file.list.7810) {
+
+    # Check whether we've already split this file; 
+    # name and hash both have to match
+    
+    dig <- digest::digest(file = file.path(RAW_DIR, f))
+    
+    if(nrow(filter(already_split, file == f, hash == dig)) == 1) {
+        message(f, " has already been split; skipping")
+        next
+    }
+
+# (proceed to split the file...)
+```
+
+## Do work only once
+
+Don't do work we've already done
+
+```
+# (after we've split the file...)
+
+# Record that we have split this file
+
+message("\tUpdating ", ALREADY_SPLIT_LIST)
+
+already_split |> 
+	# remove any older entries for this file
+	filter(!file == f) |> 
+	
+	# ...and add a new one
+	bind_rows(tibble(file = f, hash = dig, date = Sys.Date())) ->
+	already_split
+	
+write_csv(already_split, file = ALREADY_SPLIT_LIST)
+```
+
+## Do work only once
+
+Save work as we go
+
+```
+# How many result rows are already in the processed table?
+# If identical to numbers of observations to process, assume
+# that we already have done this file and move on
+
+n_processed <- length(grep(f_no_extension, processed$obs, fixed = TRUE))
+
+if(n_processed == n_obs) {
+	message("\t", n_processed, " observations already processed; moving on") 
+	next
+	
+} else {
+	# remove any old data for this file (in case it was previously
+	# partially processed, for example)
+	processed <- filter(processed, !grepl(f_no_extension, obs, fixed = TRUE))
+	
+}
+```
+
+## Keep data in data files and code in code files
+
+I'm not a fan of code being customized to modify metadata, resulting
+in a separate code file for each day/run/whatever, but it works
+for _small_ data.
+
+For large data, that way madness lies. Again imho.
+
+## Use higher-performance tools
+
+These include
+
+* [Apache Parquet files](https://parquet.apache.org) for the large 7810 data and 8100 metadata files
+* Caches (effectively what many of those intermediate files are)
+* `readr::read_csv()` instead of base R's `read.csv()`
