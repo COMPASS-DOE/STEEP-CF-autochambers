@@ -3,6 +3,8 @@
 
 # 1.  Provide fast and easy matching to align 8100 and 7810 timestamps
 
+message("Welcome to 2-Matching.R")
+
 ## Setup ----
 
 library(ggplot2)
@@ -23,6 +25,13 @@ PROCESSED_FILE_FINAL <-
     file.path(PROCESSED_DIR, "SoilFluxes_8100_Metadata_processed_final.parquet")
 
 PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "plot-level-offsets.csv")
+if(file.exists(PLOT_OFFSET_FILE)) {
+    message("Reading ", PLOT_OFFSET_FILE)
+    plot_offsets <- read_csv(PLOT_OFFSET_FILE)
+} else {
+    message("Creating new ", PLOT_OFFSET_FILE)
+    plot_offsets <- tibble()
+}
 
 ## Utility functions ----
 
@@ -125,7 +134,7 @@ message("Concentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
 
 # Plot-7810 mapping ----
 
-# Mapping from 7810s to the plots they're in. Note that this is super fragile;
+# Mapping from 7810s to the plots they're in. Note that this is very fragile;
 # if we ever change machines, we'll need to completely redo this!
 li7810_map <- tribble(~SN,           ~Plot,
                       "TG10-01746",  "Salt",
@@ -139,6 +148,11 @@ if(any(is.na(li7810dat$Plot))) {
 }
 
 ## Matchy match ----
+
+if(nrow(plot_offsets) > 0 &&
+   nrow(plot_offsets[plot_offsets$"Date" == DATE_TO_PROCESS,])) {
+        warning("This date already exists in ", PLOT_OFFSET_FILE)
+}
 
 # For each plot, combine algorithmic analysis with human QAQC to set
 # (1) The overall offset between 8100 (metadata) and 7810 (concentration) clocks
@@ -258,7 +272,23 @@ for(pl in plots) {
     message(paste0(pl, ": final plot-level offset is ", current_offset,
                    " (", offset_type, ")"))
 
-    # TODO: save graphs and chosen offset for this day and plot
+    # TODO: save graphs
+
+    # Save plot-level offset information
+    newdat <- tibble(Date = DATE_TO_PROCESS,
+                     Plot = pl,
+                     Clock_offset = current_offset,
+                     Offset_type = offset_type)
+    if(nrow(plot_offsets) > 0) {
+        plot_offsets |>
+            filter(Date != DATE_TO_PROCESS | Plot != pl) |>
+            bind_rows(newdat) ->
+            plot_offsets
+    } else {
+        plot_offsets <- newdat
+    }
+    message("Updating ", PLOT_OFFSET_FILE)
+    write_csv(plot_offsets, PLOT_OFFSET_FILE)
 
     # Collar-specific offset changes ----
 
