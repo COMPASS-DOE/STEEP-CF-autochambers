@@ -1,16 +1,30 @@
 ---
 title: "change_summary"
+author: ben
 format: revealjs
 ---
 
 ## Problem
 
-The current workflow isn't scaling well; it's too slow to handle 
-autochamber LI-8100/7810 data.
+We have 3 x {two clocks in two instruments that may drift from each other}.
+
+* Gas concentrations from the LI-7810s need to be matched reliably
+with LI-8100 metadata, and then
+* Fluxes computed and QA/QC'd.
+
+**The current workflow isn't scaling well;** it's too slow to handle
+this volume of autochamber LI-8100/7810 data.
+
+## Note
+
+What follows is _my opinion_ -- i.e., how I'd handle this.
+
+There are different ways to approach this kind of problem! 
+Not saying mine is the best.
 
 ## High level changes 
 
-The `bbl-tweaks` branch has many changes, but at a high level,
+The [bbl-tweaks](https://github.com/COMPASS-DOE/STEEP-CF-autochambers/tree/bbl-tweaks) branch has many changes, but at a high level,
 they are, in descending (imho) order of importance,
 
 * Separate functionality
@@ -21,21 +35,21 @@ they are, in descending (imho) order of importance,
 
 ## Separate functionality & prep work
 
-The first script is `1-Download_Extract_Metadata.Rmd`:
+The first script is [1-Download_Extract_Metadata.Rmd](https://github.com/COMPASS-DOE/STEEP-CF-autochambers/blob/bbl-tweaks/1-Download_Extract_Metadata.Rmd):
 
 * Downloads _all_ 8100 and 7810 files
-* Splits the large 7810 files into per-day files (LI7810_20240613.parquet, LI7810_20240614.parquet, etc.)
+* Splits the large 7810 files into **per-day files** (LI7810_20240613.parquet, LI7810_20240614.parquet, etc.)
 * Splits the 8100 files into individual observations and compiles extracted metadata into a single file
 * Runs some basic diagnostics
 
 ## Separate functionality & prep work
 
-The second script is `2-Clock_Offsets.R`:
+The second script is [2-Clock_Offsets.R](https://github.com/COMPASS-DOE/STEEP-CF-autochambers/blob/bbl-tweaks/2-Clock_Offsets.R):
 
 * Reads the metadata prepared by script 1
 * Reads the day-specific 7810 data file
 * For each plot, compute optimal clock offset for best fit between metadata (8100) times and measurement (7810) times based on linear trends of CO2
-* Allows the user to accept/reject this and substitute their own value
+* Allows the user to accept/reject this and substitute their own value, if desired, based on visual summaries
 * Allows the user to provide collar-specific offsets if needed
 
 ## Do work only once
