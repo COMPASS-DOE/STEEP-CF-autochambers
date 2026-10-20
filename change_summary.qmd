@@ -1,6 +1,7 @@
 ---
 title: "change_summary"
 author: ben
+date: today
 format: revealjs
 ---
 
@@ -17,10 +18,12 @@ this volume of autochamber LI-8100/7810 data.
 
 ## Note
 
-What follows is _my opinion_ -- i.e., how I'd handle this.
+What follows is a _recommendation_ based on how I'd handle it
 
 There are different ways to approach this kind of problem! 
-Not saying mine is the best.
+
+![](https://media.tenor.com/-Q-wvjjLaS4AAAAM/thats-just-my-opinion-rudy-ayoub.gif)
+
 
 ## High level changes 
 
