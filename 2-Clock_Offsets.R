@@ -255,11 +255,14 @@ for(pl in plots) {
         # only show a subselection of hours in the day
         li7810_plotgroups |>
             filter(hour %% 4 == 0) |>
+            mutate(in_offset = start_time_offset >= 0 + current_offset &
+                       start_time_offset <= MSMT_LENGTH + current_offset) |>
             # normalize CO2 just to make more effective use of graphing space
             group_by(hour) |>
             mutate(CO2 = CO2 - min(CO2)) |>
-            ggplot(aes(start_time_offset, CO2, color = is.na(group))) +
+            ggplot(aes(start_time_offset, CO2, color = in_offset)) +
             geom_point(size = 0.5, na.rm = TRUE) +
+            scale_color_manual(values = c("grey", "black")) +
             # the current measurement mapping
             geom_vline(xintercept = 0, linetype = 1) +
             geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
@@ -327,10 +330,13 @@ for(pl in plots) {
     not_done <- TRUE
     while(not_done) {
         li7810_plotgroups |>
+            mutate(in_offset = start_time_offset >= 0 + current_offset &
+                       start_time_offset <= MSMT_LENGTH + current_offset) |>
             group_by(hour) |>
             mutate(CO2 = CO2 - min(CO2)) |>
-            ggplot(aes(start_time_offset, CO2, color = is.na(group))) +
+            ggplot(aes(start_time_offset, CO2, color = in_offset)) +
             geom_point(size = 0.5, na.rm = TRUE) +
+            scale_color_manual(values = c("grey", "black")) +
             # the current measurement mapping
             geom_vline(xintercept = 0, linetype = 1) +
             geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
