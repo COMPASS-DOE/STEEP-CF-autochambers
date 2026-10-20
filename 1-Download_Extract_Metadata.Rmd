@@ -1,0 +1,354 @@
+---
+title: "1-Download_Extract_Metadata"
+author: "Zoe Read & S. Wilson"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tibble)
+library(readr)
+library(googledrive)
+library(arrow)
+library(ggplot2)
+theme_set(theme_bw())
+
+RAW_DIR <- "Raw_Data/"
+
+# This is the root folder with all dates
+# (but if local drive space is an issue, you can also use a
+# date-specific folder on google drive)
+GDRIVE_FOLDER <- "https://drive.google.com/drive/folders/1ETfZoritHHmPS0X4vXFLmjBlqMCS8OK8"
+# For example, this is the 20260604 folder
+# GDRIVE_8100_FOLDER <- "https://drive.google.com/drive/folders/107du2DkwDA2VpeqxdegbSe_dCoVvgpmP"
+
+PROCESSED_FILE <- file.path("Processed_Data",
+                            "SoilFluxes_8100_Metadata_processed.parquet")
+PROCESSED_FILE_FINAL <- gsub("processed.parquet", 
+                             "processed_final.parquet",
+                             PROCESSED_FILE)
+```
+
+## What this code does
+
+1. Download ALL the LI-8100 and 7810 data files from the Google Drive. Existing files will be skipped.
+2. Split 7810 files into individual-day Parquet files.
+3. Separate 8100 file into each flux and extract their metadata into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
+4. The final metadata is saved as `r PROCESSED_FILE_FINAL`.
+
+**Need to figure out how to incorporate the 8100 error log 
+(remove those fluxes?)**
+
+## Download zipped 81x files into raw data folder
+
+```{r download-8100}
+options(googledrive_quiet = TRUE)
+
+# Filter to necessary files
+files_pulse <- drive_ls(path = GDRIVE_FOLDER,
+                        recursive = TRUE,
+                        pattern = "81x$")
+
+message("Found ", nrow(files_pulse), " files")
+
+download_files <- function(files_pulse) {
+    # Download files to local directory
+    invisible(
+        lapply(seq_len(nrow(files_pulse)), function(i) {
+            outfile <- file.path(RAW_DIR, files_pulse$name[i])
+            message(i, " ", basename(outfile))
+            if(file.exists(outfile)) {
+                message("\tskipped existing file ")
+            } else {
+                message("\tdownloading...")
+                drive_download(
+                    file = as_id(files_pulse$id[i]),
+                    path = outfile,
+                    overwrite = TRUE
+                )
+            }
+        })
+    )   
+}
+
+download_files(files_pulse)
+```
+
+## Download 7810 data files
+
+```{r download-7810}
+# Filter to necessary files
+files_pulse <- drive_ls(
+  path = GDRIVE_FOLDER,
+  recursive = TRUE,
+  pattern = "TG10.*data$")
+
+message("Found ", nrow(files_pulse), " files")
+
+download_files(files_pulse)
+
+# 7810 files (full paths)
+file.list.7810 <- list.files(path = RAW_DIR,
+                             pattern = "TG10.*data$")
+
+message("We have ", length(file.list.7810), " 7810 files")
+```
+
+## Split 7810 files into per-day files
+
+```{r split-7810-files-prep}
+ALREADY_SPLIT_LIST <- file.path(RAW_DIR, "LI7810_already_split_files.csv")
+
+if(file.exists(ALREADY_SPLIT_LIST)) {
+    already_split <- read_csv(ALREADY_SPLIT_LIST, col_types = "ccD")
+} else {
+    already_split <- tibble(file = character(0), hash = character(0), date = Date(0))    
+}
+```
+
+This is a bit slow, as they're big files, so we keep track of 
+what files have already been split in a simple CSV table `r ALREADY_SPLIT_LIST`.
+
+```{r split-7810-files}
+message("Splitting ", length(file.list.7810), " LI-7810 files")
+for(f in file.list.7810) {
+    # Check whether we've already split this file; name and hash both have to match
+    dig <- digest::digest(file = file.path(RAW_DIR, f))
+    if(nrow(filter(already_split, file == f, hash == dig)) == 1) {
+        message(f, " has already been split; skipping")
+        next
+    }
+    
+    x <- ffi_read_LI7810(file.path(RAW_DIR, f))
+    x$TIMESTAMP <- force_tz(x$TIMESTAMP, "EST")
+    days <- format(x$TIMESTAMP, "%Y%m%d")
+    for(d in unique(days)) {
+        # Split files are "LI7810_YYYYMMDD.parquet"
+        splitfile <- file.path(RAW_DIR, paste0("LI7810_", d, ".parquet"))
+        if(file.exists(splitfile)) {
+            message("\tAppending to ", splitfile)
+            prevdata <- read_parquet(splitfile)
+        } else {
+            message("\tCreating ", splitfile)
+            prevdata <- NULL
+        }
+        # Filter to this day, add any previous data, write out
+        x[days == d,] |> 
+            bind_rows(prevdata) |> 
+            distinct() |> 
+            arrange(TIMESTAMP) |> 
+            write_parquet(splitfile)
+        
+    }
+    # Record that we have split this file
+    message("\tUpdating ", ALREADY_SPLIT_LIST)
+    already_split |> 
+        # remove any older entries for this file
+        filter(!file == f) |> 
+        # ...and add a new one
+        bind_rows(tibble(file = f, hash = dig, date = Sys.Date())) ->
+        already_split
+    write_csv(already_split, file = ALREADY_SPLIT_LIST)
+}
+```
+
+## Split 8100 files into observations and extract info
+
+```{r split-8100-files-prep}
+# Helper function: extract data from one observation in a LI-8100 file
+# dat_raw is a vector of lines from the file
+process_obs <- function(dat_raw, model) {
+    # Make sure this is the desired model
+    file_model <- substr(dat_raw[1], 1, 7)
+    if(file_model != model) stop("This does not appear to be a ", model, " file!")
+    
+    # Save the observation number
+    obs <- trimws(gsub("Obs#:\t", "", dat_raw[7], fixed = TRUE))
+    # Save the observation length
+    obs_length <- trimws(gsub("Observation Length:\t", "", dat_raw[10], fixed = TRUE))
+    # Save the machine serial number
+    sn <- trimws(gsub("Serial Number:\t", "", dat_raw[4], fixed = TRUE))
+    # Parse the collar label from the header
+    label <- trimws(gsub("Label:\t", "", dat_raw[9], fixed = TRUE))
+    # Parse the collar number from the header
+    chamber <- trimws(gsub("Chamber:\t", "", dat_raw[14], fixed = TRUE))
+    # Parse the chamber volume from the header
+    Vtotal <- trimws(gsub("Vtotal:\t", "", dat_raw[25], fixed = TRUE))
+    # Parse the dead band from the footer
+    DeadBand <- trimws(gsub("Dead Band:\t", "", dat_raw[length(dat_raw)-2], fixed = TRUE))
+    # Parse the closing time from the header and use it to make a collar field
+    TimeClosing <- trimws(gsub("TimeClosing:\t", "", dat_raw[length(dat_raw)-1], fixed = TRUE))
+    
+    # Log assembled data
+    extracted <- tibble(SN = sn,
+                        label = label,
+                        chamber = chamber,
+                        Vtotal = Vtotal,
+                        obs_length = obs_length,
+                        DeadBand = DeadBand,
+                        TimeClosing = TimeClosing)
+    
+    # These files have 30 header lines, the column names in line 31,
+    # and then the column units in line 7. We only want the names and then data
+    total_lines = length(dat_raw)
+    lines_to_skip <- 30
+    lines_to_read <- total_lines - 30 - 25
+    
+    extracted$lines_read <- lines_to_read
+    if(lines_to_read < 0) {
+        negative_line_count <<- negative_line_count + 1
+        return(extracted)
+    }
+    
+    # We read directly from the string vector; much faster than writing
+    # out and reading back in
+    dat_read <- read.delim(textConnection(dat_raw),
+        skip = lines_to_skip,
+        nrows = lines_to_read,
+        sep = "\t",
+        header = TRUE)
+    
+    # Get first and last timestamp
+    extracted$start_time <- first(dat_read$Date)
+    extracted$end_time <- last(dat_read$Date)
+    
+    # Get average of environmental variables (V1-V4)
+    warning_occurred <- tryCatch({
+        extracted$Tcham <- mean(dat_read$Tcham, na.rm = TRUE)
+        extracted$Pressure <- mean(dat_read$Pressure, na.rm = TRUE)
+        extracted$V1_avg <- mean(dat_read$V1, na.rm = TRUE)
+        extracted$V2_avg <- mean(dat_read$V2, na.rm = TRUE)
+        extracted$V3_avg <- mean(dat_read$V3, na.rm = TRUE)
+        extracted$V4_avg <- mean(dat_read$V4, na.rm = TRUE)
+        FALSE
+    }, warning = function(w) {
+        warning_count <<- warning_count + 1
+        TRUE
+    })
+    
+    extracted$warning <-  warning_occurred
+    
+    return(extracted)
+}
+
+
+# List extracted 8100 files
+file.list.8100 <- list.files(path = RAW_DIR, pattern = "81x$")
+message("We have ", length(file.list.8100), " LI-8100 files")
+
+# Look for an existing processed metadata file
+if(file.exists(PROCESSED_FILE)) {
+    message("Reading existing ", PROCESSED_FILE)
+    processed <- read_parquet(PROCESSED_FILE)    
+    message("(remove this file to re-run everything from scratch)")
+} else {
+    message("Creating new ", PROCESSED_FILE)
+    processed <- tibble()
+}
+```
+
+
+```{r split-8100-files}
+
+# Go through the split files, read and process, add to processed table
+# Write out table every so often so we don't lose our progress
+skip_obs_count <- 0
+processed_obs_count <- 0
+negative_line_count <- 0
+warning_count <- 0
+
+for (i in seq_along(file.list.8100)) {
+    f <- file.list.8100[i]
+    message(i, "/", length(file.list.8100), " Reading ", f, "... ")
+    lines <- readLines(file.path(RAW_DIR, f))
+    f_no_extension <- gsub(".81x$", "", f)
+    
+    # Find all the lines that start with LI-8100 in this file
+    l8100 <- grep("^LI-8100", lines)
+    n_obs <- length(l8100)
+    # Add one at end so that 'last' calculation below works for final entry
+    l8100 <- c(l8100, length(lines) + 1) 
+    
+    # How many result rows are already in the processed table? If identical
+    # to numbers of observations to process, assume we already have this file
+    # and move on
+    if(nrow(processed) > 0) {
+        n_processed <- length(grep(f_no_extension, processed$obs, fixed = TRUE))
+        if(n_processed == n_obs) {
+            message("\t", n_processed, " observations already processed; moving on") 
+            next
+        } else {
+            # remove any old data for this file (in case it was previously
+            # partially processed, for example)
+            processed <- filter(processed, !grepl(f_no_extension, obs, fixed = TRUE))
+        }
+    }
+    
+    # Process each observation, saving results in a list
+    file_results <- list()
+    for(i in seq_along(head(l8100, -1))) {
+        first <- l8100[i]
+        last <- l8100[i+1] - 1
+        file_results[[i]] <- process_obs(lines[first:last], model = "LI-8100")
+        file_results[[i]]$obs <- i
+    }
+    processed_obs_count <- processed_obs_count + n_obs
+    file_dat <- bind_rows(file_results) |> mutate(file = f_no_extension)
+    
+    # Add to processed data and write out
+    processed |> 
+        bind_rows(file_dat) -> 
+        processed
+    write_parquet(processed, PROCESSED_FILE)
+    message("\tProcessed ", n_obs, " observations")
+} # for i
+```
+
+## Join with collar metadata
+
+```{r collar-map}
+message("Reading collar map...")
+collar_metadata <- read_csv(file.path("metadata", "collar_map.csv"),
+                            col_types = "ccic_")
+
+processed %>% 
+    left_join(collar_metadata, 
+              by = c("label" = "Collar"),
+              relationship = "many-to-one") ->
+    processed_collars
+
+### Probably need to do some cleaning here on the temperature data 
+message("processed_collars is ", nrow(processed_collars), " x ",
+        ncol(processed_collars))
+```
+
+## Diagnostics
+
+```{r diagnostics}
+message("How many files generated a warning?")
+processed_collars |> 
+    group_by(warning) |> 
+    summarise(n = n()) |> 
+    mutate(percent = round(n / sum(n) * 100, 2))
+
+ggplot(processed_collars, aes(lines_read)) +
+    geom_histogram(bins = 30)
+```
+
+## Write out 8100 metadata
+
+```{r output}
+message("Writing ", PROCESSED_FILE_FINAL)
+write_parquet(processed_collars, PROCESSED_FILE_FINAL)
+```
+
+## Reproducibility
+
+```{r reproducibility}
+sessionInfo()
+```
