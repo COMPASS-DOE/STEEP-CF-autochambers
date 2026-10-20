@@ -239,6 +239,8 @@ for(pl in plots) {
         xlab("Tested clock offset (s)") +
         ggtitle(paste(DATE_TO_PROCESS, pl, "offset analysis; best =", alg_offset))
     print(p_offset_results)
+    readline("Hit <Return> to see next plot: ")
+
     # Save
     DATE_NO_DASHES <- gsub("-", "", DATE_TO_PROCESS)
     pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl, "_alloffsets.pdf"))

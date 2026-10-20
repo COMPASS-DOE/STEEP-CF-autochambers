@@ -37,8 +37,8 @@ PROCESSED_FILE_FINAL <- gsub("processed.parquet",
 ## What this code does
 
 1. Download ALL the LI-8100 and 7810 data files from the Google Drive. Existing files will be skipped.
-2. Separate 8100 file into each flux. This generates a huge (almost 200K) number of files, but they're small.
-3. Extract metadata from each flux file into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
+2. Split 7810 files into individual-day Parquet files.
+3. Separate 8100 file into each flux and extract their metadata into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
 4. The final metadata is saved as `r PROCESSED_FILE_FINAL`.
 
 **Need to figure out how to incorporate the 8100 error log 
