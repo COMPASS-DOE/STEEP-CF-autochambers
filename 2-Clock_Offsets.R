@@ -164,7 +164,6 @@ if(any(is.na(li7810dat$Plot))) {
 }
 
 ## Matchy match ----
-
 if(nrow(plot_offsets) > 0 &&
    nrow(plot_offsets[plot_offsets$"Date" == DATE_TO_PROCESS,])) {
     message("WARNING: this date ", DATE_TO_PROCESS, " already exists in ", PLOT_OFFSET_FILE)
@@ -289,8 +288,9 @@ for(pl in plots) {
         p_plot_offset <- p_plot_offset + ggtitle(title, subtitle = subtitle)
         print(p_plot_offset)
 
-        done <- askYesNo(paste0(pl, ": accept ", offset_type, " offset of ",
+        done <- readline(paste0(pl, ": accept ", offset_type, " offset of ",
                                 current_offset, "? "))
+        done <- tolower(trimws(done)) %in% c("y", "yes")
         if(!done) {
             readline(paste(pl, ": manual offset (0=none): ")) |>
                 as.numeric() ->
@@ -363,9 +363,10 @@ for(pl in plots) {
         p_collar_offset <- p_collar_offset + ggtitle(title, subtitle = subtitle)
         print(p_collar_offset)
 
-        not_done <- askYesNo(paste0(pl, ": any",
+        not_done <- readline(paste0(pl, ": any",
                                     if_else(collar_adjustment_made, " more", ""),
                                     " collar-specific offsets to change? "))
+        not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
         if(not_done) {
             collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
 
