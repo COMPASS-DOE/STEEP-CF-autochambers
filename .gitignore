@@ -1,0 +1,27 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# OS files
+.DS_Store
+
+# Temporary data
+/Raw_data/*.81x
+/Raw_data/*.data
+/Raw_data/*.parquet
+Raw_Data/LI7810_already_split_files.csv
+# have one single-day file to the repo as an example
+!Raw_Data/LI7810_20240608.parquet
+
+# Output plots
+/Processed_Data/*.pdf
+
+# Rendered Rmarkdown
+*.html
+*.tex
+*.log
+
+# revealjs slides
+/change_summary_files
+rsconnect/
