@@ -132,7 +132,10 @@ for(f in file.list.7810) {
         splitfile <- file.path(RAW_DIR, paste0("LI7810_", d, ".parquet"))
         if(file.exists(splitfile)) {
             message("\tAppending to ", splitfile)
-            prevdata <- read_parquet(splitfile)
+            # mmap=FALSE because on Windows the file is otherwise
+            # locked and can't be overwritten below. Alteratively,
+            # we could delete the file.
+            prevdata <- read_parquet(splitfile, mmap = FALSE)
         } else {
             message("\tCreating ", splitfile)
             prevdata <- NULL
