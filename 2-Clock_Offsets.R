@@ -260,6 +260,7 @@ for(pl in plots) {
             # normalize CO2 just to make more effective use of graphing space
             group_by(hour) |>
             mutate(CO2 = CO2 - min(CO2)) |>
+            # main plot, with points colored by being within the offset window
             ggplot(aes(start_time_offset, CO2, color = in_offset)) +
             geom_point(size = 0.5, na.rm = TRUE) +
             scale_color_manual(values = c("grey", "black")) +
@@ -334,6 +335,7 @@ for(pl in plots) {
                        start_time_offset <= MSMT_LENGTH + current_offset) |>
             group_by(hour) |>
             mutate(CO2 = CO2 - min(CO2)) |>
+            # main plot, with points colored by being within the offset window
             ggplot(aes(start_time_offset, CO2, color = in_offset)) +
             geom_point(size = 0.5, na.rm = TRUE) +
             scale_color_manual(values = c("grey", "black")) +

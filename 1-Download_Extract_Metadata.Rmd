@@ -10,8 +10,6 @@ output:
 ```{r setup, message=FALSE}
 library(dplyr)
 library(tidyr)
-library(stringr)
-library(tibble)
 library(readr)
 library(googledrive)
 library(arrow)
