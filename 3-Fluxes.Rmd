@@ -1,0 +1,120 @@
+---
+title: "1-Fluxes"
+author: "Zoe Read & S. Wilson"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(readr)
+library(googledrive)
+library(lubridate)
+library(arrow)
+library(ggplot2)
+theme_set(theme_bw())
+
+RAW_DIR <- "Raw_Data/"
+
+MSMT_LENGTH <- 90
+
+RAW_DIR <- "Raw_Data/"
+PROCESSED_DIR <- "Processed_Data"
+
+PROCESSED_FILE_FINAL <-
+    file.path(PROCESSED_DIR, "SoilFluxes_8100_Metadata_processed_final.parquet")
+```
+
+## Load metadata
+
+```{r}
+message("Reading ", basename(PROCESSED_FILE_FINAL))
+read_parquet(PROCESSED_FILE_FINAL) |> 
+    mutate(start_time = ymd_hms(start_time, tz = "EST"),
+           end_time = ymd_hms(end_time, tz = "EST")) ->
+    md_all
+message("Metadata file is ", nrow(md_all), " x ", ncol(md_all))
+message("\tremoving empty dates")
+md_all |> 
+    mutate(Date = date(start_time)) |> 
+    filter(!is.na(Date)) ->
+    md_all
+message("Metadata file is ", nrow(md_all), " x ", ncol(md_all))
+message("\tdate range: ", min(md_all$Date), " to ", max(md_all$Date))
+
+PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-plot-specific.csv")
+message("Reading ", PLOT_OFFSET_FILE)
+plot_offsets <- read_csv(PLOT_OFFSET_FILE, col_types = "Dcdc")
+message("Plot offsets is ", nrow(plot_offsets), " x ", ncol(plot_offsets))
+
+COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
+message("Reading ", COLLAR_OFFSET_FILE)
+collar_offsets <- read_csv(COLLAR_OFFSET_FILE, col_types = "Dcd")
+message("Collar offsets is ", nrow(collar_offsets), " x ", ncol(collar_offsets))
+
+```
+
+# Data matching and flux computation
+
+```{r}
+
+dates_to_process <- unique(md_all$date)
+# TESTING ONLY -- do just one date
+# Comment this out for real use!
+dates_to_process <- ymd("2026-06-08") 
+
+for(i in seq_along(dates_to_process)) {
+    d <- dates_to_process[i]
+    message(i, "/", length(dates_to_process), ": ", d)
+    md_all |> 
+        filter(Date == d) ->
+        md_this
+    message("\t", nrow(md_all), " fluxes")
+    
+    # Read the day-specific file prepared by script 1
+    li7810file <- file.path(RAW_DIR, paste0("LI7810_", gsub("-", "", d), ".parquet"))
+    if(file.exists(li7810file)) {
+        li7810dat <- read_parquet(li7810file)
+        li7810dat$TIMESTAMP <- force_tz(li7810dat$TIMESTAMP, "EST")
+    } else {
+        warning("No concentration data available for ", d)
+        next
+    }
+    message("\tconcentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
+    
+    # Get offset information and check for anything missing
+    md_this |> 
+        left_join(plot_offsets, by = c("Plot", "Date"), relationship = "many-to-one")|> 
+        left_join(collar_offsets, by = c("Date", "label"), relationship = "many-to-one") |> 
+        mutate(final_clock_offset = if_else(is.na(collar_offset), Clock_offset, collar_offset)) -> 
+        md_this_offsets
+    
+    if(any(is.na(md_this_offsets$final_clock_offset))) {
+        md_this_offsets |> 
+            filter(is.na(final_clock_offset)) |> 
+            pull(Plot) |> 
+            unique() -> 
+            missing_plots
+        stop("Plots (", paste(missing_plots, collapse = ", "), ") do not have offset information!")
+    }
+    
+    for(msmt in seq_along(nrow(md_this_offsets))) {
+        this_start <- md_this_offsets$start_time[msmt]
+        this_offset <- md_this_offsets$final_clock_offset[msmt]
+        this_label <- md_this_offsets$label[msmt]
+        li7810dat |> 
+            filter(TIMESTAMP >= this_start + this_offset, 
+                   TIMESTAMP <= this_start + this_offset + MSMT_LENGTH, 
+                   label == this_label)
+    }
+    
+    # TODO: script 2 needs to include 7810SN in the metadata
+    # Then we use that here
+}
+
+```
+
