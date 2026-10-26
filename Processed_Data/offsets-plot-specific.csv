@@ -1,0 +1,4 @@
+Date,Plot,Clock_offset,Offset_type
+2026-06-08,Control,35,algorithmic
+2026-06-08,Fresh,25,manual
+2026-06-08,Salt,20,algorithmic
