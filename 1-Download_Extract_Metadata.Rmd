@@ -14,6 +14,8 @@ library(readr)
 library(googledrive)
 library(arrow)
 library(ggplot2)
+library(fluxfinder)
+library(lubridate)
 theme_set(theme_bw())
 
 RAW_DIR <- "Raw_Data/"
@@ -189,6 +191,7 @@ process_obs <- function(dat_raw, model) {
     extracted <- tibble(SN = sn,
                         label = label,
                         chamber = chamber,
+                        obs = obs, 
                         Vtotal = Vtotal,
                         obs_length = obs_length,
                         DeadBand = DeadBand,
@@ -251,6 +254,9 @@ if(file.exists(PROCESSED_FILE)) {
     message("Creating new ", PROCESSED_FILE)
     processed <- tibble()
 }
+
+##Use to remove the file if need to rerun code
+# file.remove("Processed_Data/SoilFluxes_8100_Metadata_processed.parquet")
 ```
 
 
