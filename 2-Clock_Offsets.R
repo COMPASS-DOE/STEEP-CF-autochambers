@@ -19,7 +19,7 @@ library(arrow)
 
 MSMT_LENGTH <- 90
 
-DATE_TO_PROCESS <- ymd("2026-06-08")
+DATE_TO_PROCESS <- ymd("2026-06-09")
 
 RAW_DIR <- "Raw_Data/"
 PROCESSED_DIR <- "Processed_Data"
@@ -289,8 +289,9 @@ for(pl in plots) {
         p_plot_offset <- p_plot_offset + ggtitle(title, subtitle = subtitle)
         print(p_plot_offset)
 
-        done <- askYesNo(paste0(pl, ": accept ", offset_type, " offset of ",
+        done <- readline(paste0(pl, ": accept ", offset_type, " offset of ",
                                 current_offset, "? "))
+        done <- tolower(trimws(done)) %in% c("y", "yes")
         if(!done) {
             readline(paste(pl, ": manual offset (0=none): ")) |>
                 as.numeric() ->
@@ -363,9 +364,10 @@ for(pl in plots) {
         p_collar_offset <- p_collar_offset + ggtitle(title, subtitle = subtitle)
         print(p_collar_offset)
 
-        not_done <- askYesNo(paste0(pl, ": any",
+        not_done <- readline(paste0(pl, ": any",
                                     if_else(collar_adjustment_made, " more", ""),
                                     " collar-specific offsets to change? "))
+        not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
         if(not_done) {
             collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
 
