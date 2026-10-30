@@ -17,6 +17,7 @@ library(lubridate)
 library(arrow)
 library(ggplot2)
 theme_set(theme_bw())
+library(fluxfinder)
 
 RAW_DIR <- "Raw_Data/"
 
@@ -25,8 +26,15 @@ MSMT_LENGTH <- 90
 RAW_DIR <- "Raw_Data/"
 PROCESSED_DIR <- "Processed_Data"
 
-PROCESSED_FILE_FINAL <-
-    file.path(PROCESSED_DIR, "SoilFluxes_8100_Metadata_processed_final.parquet")
+# Metadata file produced by script 1
+PROCESSED_FILE_FINAL <- file.path(PROCESSED_DIR, 
+                                  "SoilFluxes_8100_Metadata_processed_final.parquet")
+# Clock offset files produced by script 2
+PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-plot-specific.csv")
+COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
+
+# The output of this script: computed fluxes
+FLUX_FILE <- file.path(PROCESSED_DIR, "SoilFluxes.parquet")
 ```
 
 ## Load metadata
@@ -35,37 +43,49 @@ PROCESSED_FILE_FINAL <-
 message("Reading ", basename(PROCESSED_FILE_FINAL))
 read_parquet(PROCESSED_FILE_FINAL) |> 
     mutate(start_time = ymd_hms(start_time, tz = "EST"),
-           end_time = ymd_hms(end_time, tz = "EST")) ->
+           end_time = ymd_hms(end_time, tz = "EST"),
+           Vtotal = as.numeric(Vtotal)) ->
     md_all
-message("Metadata file is ", nrow(md_all), " x ", ncol(md_all))
-message("\tremoving empty dates")
+message("\tMetadata file is ", nrow(md_all), " x ", ncol(md_all))
+message("\tRemoving empty dates")
 md_all |> 
     mutate(Date = date(start_time)) |> 
     filter(!is.na(Date)) ->
     md_all
 message("Metadata file is ", nrow(md_all), " x ", ncol(md_all))
-message("\tdate range: ", min(md_all$Date), " to ", max(md_all$Date))
+message("\tDate range: ", min(md_all$Date), " to ", max(md_all$Date))
 
-PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-plot-specific.csv")
 message("Reading ", PLOT_OFFSET_FILE)
 plot_offsets <- read_csv(PLOT_OFFSET_FILE, col_types = "Dcdc")
-message("Plot offsets is ", nrow(plot_offsets), " x ", ncol(plot_offsets))
+message("\tPlot offset file is ", nrow(plot_offsets), " x ", ncol(plot_offsets))
 
-COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
-message("Reading ", COLLAR_OFFSET_FILE)
-collar_offsets <- read_csv(COLLAR_OFFSET_FILE, col_types = "Dcd")
-message("Collar offsets is ", nrow(collar_offsets), " x ", ncol(collar_offsets))
+if(file.exists(COLLAR_OFFSET_FILE)) {
+    message("Reading ", COLLAR_OFFSET_FILE)
+    collar_offsets <- read_csv(COLLAR_OFFSET_FILE, col_types = "Dcd")
+    message("\tCollar offset file is ", nrow(collar_offsets), " x ", ncol(collar_offsets))
+} else {
+    message("No collar offset file")
+    collar_offsets <- tibble(Date = Date(0), label = character(0), collar_offset = NA_real_)
+}
 
+if(file.exists(FLUX_FILE)) {
+    message("Reading ", FLUX_FILE)
+    fluxes <- read_parquet()
+    message("\tFlux file is ", nrow(fluxes), " x ", ncol(fluxes))
+} else {
+    message("No flux file")
+    fluxes <- tibble()
+}
 ```
 
 # Data matching and flux computation
 
 ```{r}
 
-dates_to_process <- unique(md_all$date)
+dates_to_process <- unique(md_all$Date)
 # TESTING ONLY -- do just one date
 # Comment this out for real use!
-dates_to_process <- ymd("2026-06-08") 
+dates_to_process <- ymd("2026-06-09") 
 
 for(i in seq_along(dates_to_process)) {
     d <- dates_to_process[i]
@@ -73,7 +93,7 @@ for(i in seq_along(dates_to_process)) {
     md_all |> 
         filter(Date == d) ->
         md_this
-    message("\t", nrow(md_all), " fluxes")
+    message("\t", nrow(md_this), " fluxes")
     
     # Read the day-specific file prepared by script 1
     li7810file <- file.path(RAW_DIR, paste0("LI7810_", gsub("-", "", d), ".parquet"))
@@ -90,7 +110,8 @@ for(i in seq_along(dates_to_process)) {
     md_this |> 
         left_join(plot_offsets, by = c("Plot", "Date"), relationship = "many-to-one")|> 
         left_join(collar_offsets, by = c("Date", "label"), relationship = "many-to-one") |> 
-        mutate(final_clock_offset = if_else(is.na(collar_offset), Clock_offset, collar_offset)) -> 
+        mutate(final_clock_offset = if_else(is.na(collar_offset), Clock_offset, collar_offset),
+               Flux_CO2 = NA_real_, Flux_CH4 = NA_real_) -> 
         md_this_offsets
     
     if(any(is.na(md_this_offsets$final_clock_offset))) {
@@ -99,21 +120,52 @@ for(i in seq_along(dates_to_process)) {
             pull(Plot) |> 
             unique() -> 
             missing_plots
-        stop("Plots (", paste(missing_plots, collapse = ", "), ") do not have offset information!")
+        warning("Plots (", paste(missing_plots, collapse = ", "), 
+                ") do not have offset information! Skipping this day")
+        next
     }
     
-    for(msmt in seq_along(nrow(md_this_offsets))) {
+    for(msmt in seq_len(nrow(md_this_offsets))) {
         this_start <- md_this_offsets$start_time[msmt]
         this_offset <- md_this_offsets$final_clock_offset[msmt]
         this_label <- md_this_offsets$label[msmt]
+        this_vol <- md_this_offsets$Vtotal[msmt] / 100^3 # m3
+        this_pressure <- md_this_offsets$Pressure[msmt]
+        # Isolate, based on the clock offsets for this day and plot, 
+        # the LI-7810 concentration data for this row of the metadata
+        # table (i.e., for this label=collar and plot)
         li7810dat |> 
             filter(TIMESTAMP >= this_start + this_offset, 
-                   TIMESTAMP <= this_start + this_offset + MSMT_LENGTH, 
-                   label == this_label)
+                   TIMESTAMP <= this_start + this_offset + MSMT_LENGTH) |>  
+            # convert gas concentrations to µmol (CO2) or nmol (CH4)
+            mutate(
+                CO2_umol = ffi_ppm_to_umol(CO2, 
+                                           volume = this_vol,
+                                           temp = md_this_offsets$Tcham[msmt],
+                                           atm = this_pressure),
+                CH4_nmol = ffi_ppb_to_nmol(CH4, 
+                                          volume = this_vol,
+                                          temp = md_this_offsets$Tcham[msmt],
+                                          atm = this_pressure)
+            ) ->
+            this_7810data
+        # Compute fluxes. Because of the process used in 2-Clock_Offsets.R,
+        # we set don't use deadband as that's already been accounted for
+        md_this_offsets$Flux_CO2 <- ffi_compute_fluxes(this_7810data,
+                                                       group_column = NULL, 
+                                                       time_column = "TIMESTAMP", 
+                                                       gas_column = "CO2_umol")
+        md_this_offsets$Flux_CH4 <- ffi_compute_fluxes(this_7810data,
+                                                       group_column = NULL, 
+                                                       time_column = "TIMESTAMP", 
+                                                       gas_column = "CH4_nmol")
+        
     }
     
     # TODO: script 2 needs to include 7810SN in the metadata
     # Then we use that here
+    
+    # TODO: load in L2 air temperature data files and use in place of Tcham
 }
 
 ```
