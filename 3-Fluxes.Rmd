@@ -34,7 +34,7 @@ PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-plot-specific.csv")
 COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
 
 # The output of this script: computed fluxes
-FLUX_FILE <- file.path(PROCESSED_DIR, "SoilFluxes.parquet")
+TEMP_FLUX_DIR <- file.path(PROCESSED_DIR, "temporary_fluxes")
 ```
 
 ## Load metadata
@@ -68,19 +68,11 @@ if(file.exists(COLLAR_OFFSET_FILE)) {
     collar_offsets <- tibble(Date = Date(0), label = character(0), collar_offset = NA_real_)
 }
 
-if(file.exists(FLUX_FILE)) {
-    message("Reading ", FLUX_FILE)
-    fluxes <- read_parquet()
-    message("\tFlux file is ", nrow(fluxes), " x ", ncol(fluxes))
-} else {
-    message("No flux file")
-    fluxes <- tibble()
-}
 ```
 
-# Load climate data
+# Load weather data
 
-```{r climate-data}
+```{r weather-data}
 wx_files <- list.files("weather_data/", 
                        pattern = "GCW_W_[0-9]{4}_wx-tempavg15_L2.*.parquet$", 
                        full.names = TRUE)
@@ -165,21 +157,30 @@ for(i in seq_along(dates_to_process)) {
         # Isolate, based on the clock offsets for this day and plot, 
         # the LI-7810 concentration data for this row of the metadata
         # table (i.e., for this label=collar and plot)
-        li7810dat |> 
-            filter(TIMESTAMP >= this_start + this_offset, 
-                   TIMESTAMP <= this_start + this_offset + MSMT_LENGTH) |>  
-            # convert gas concentrations to µmol (CO2) or nmol (CH4)
-            mutate(
-                CO2_umol = ffi_ppm_to_umol(CO2, 
-                                           volume = this_vol,
-                                           temp = this_tair,
-                                           atm = this_pressure),
-                CH4_nmol = ffi_ppb_to_nmol(CH4, 
-                                          volume = this_vol,
-                                          temp = this_tair,
-                                          atm = this_pressure)
-            ) ->
-            this_7810data
+        suppressMessages({
+            li7810dat |> 
+                filter(TIMESTAMP >= this_start + this_offset, 
+                       TIMESTAMP <= this_start + this_offset + MSMT_LENGTH) |>  
+                # convert gas concentrations to µmol (CO2) or nmol (CH4)
+                mutate(
+                    CO2_umol = ffi_ppm_to_umol(CO2, 
+                                               volume = this_vol,
+                                               temp = this_tair,
+                                               atm = this_pressure),
+                    CH4_nmol = ffi_ppb_to_nmol(CH4, 
+                                               volume = this_vol,
+                                               temp = this_tair,
+                                               atm = this_pressure)
+                ) ->
+                this_7810data
+            
+        })
+        
+        if(nrow(this_7810data) == 0) {
+            message("WARNING: NO 7810 DATA AVAILABLE AT ", this_start)
+            next
+        }
+        
         # Compute fluxes. Because of the process used in 2-Clock_Offsets.R,
         # we set don't use deadband as that's already been accounted for
         md_this_offsets$wx_tair[msmt] <- this_tair
@@ -199,6 +200,14 @@ for(i in seq_along(dates_to_process)) {
         
         
     }
+    
+    bind_rows(co2_fluxes) |> 
+        bind_cols(bind_rows(ch4_fluxes)) |> 
+        mutate(metadata_row = i) ->
+        fluxes
+    message("\tcombining and saving ", nrow(fluxes), " fluxes")
+    
+    write_parquet(fluxes, file.path(TEMP_FLUX_DIR, paste0(gsub("-", "", d), ".parquet")))
     
     # TODO: script 2 needs to include 7810SN in the metadata
     # Then we use that here
