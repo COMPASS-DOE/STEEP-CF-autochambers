@@ -19,7 +19,7 @@ library(arrow)
 
 MSMT_LENGTH <- 90
 
-DATE_TO_PROCESS <- ymd("2026-06-09")
+DATE_TO_PROCESS <- ymd("2024-08-09")
 
 RAW_DIR <- "Raw_Data/"
 PROCESSED_DIR <- "Processed_Data"
@@ -144,7 +144,7 @@ if(file.exists(li7810file)) {
     li7810dat$TIMESTAMP <- force_tz(li7810dat$TIMESTAMP, "EST")
 } else {
     # else what?
-    stop()
+    stop("There are no 7810 data available for ", DATE_TO_PROCESS, "!")
 }
 message("Concentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
 
