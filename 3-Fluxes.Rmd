@@ -82,7 +82,8 @@ for(f in wx_files) {
     read_parquet(f) |>
         mutate(TIMESTAMP = force_tz(TIMESTAMP, tzone = "EST")) |> 
         group_by(Site, Plot, TIMESTAMP) |> 
-        summarise(Value_MAC = mean(Value_MAC), .groups = "drop") -> x
+        summarise(Value_MAC = mean(Value_MAC), .groups = "drop") ->
+        x
     
     wx_data[[unique(year(x$TIMESTAMP))]] <- x
 }
@@ -115,6 +116,7 @@ for(i in seq_along(dates_to_process)) {
         next
     }
     message("\tconcentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
+    message("\tconcentration data timestamp range is ", paste(range(li7810dat$TIMESTAMP), collapse = " to "))
     
     # Get offset information and check for anything missing
     md_this |> 
