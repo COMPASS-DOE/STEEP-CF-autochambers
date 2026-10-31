@@ -131,6 +131,35 @@ for(f in wx_files) {
 # Data matching and flux computation
 
 ```{r compute_fluxes}
+
+# Utility function
+isolate_7810_data <- function(li7810dat, this_start, this_offset,
+                              this_vol, this_tair, this_pressure) {
+    # Isolate, based on the clock offsets for this day and plot, 
+    # the LI-7810 concentration data for this row of the metadata
+    # table (i.e., for this label=collar and plot)
+    suppressMessages({
+        li7810dat |> 
+            filter(TIMESTAMP >= this_start + this_offset, 
+                   TIMESTAMP <= this_start + this_offset + MSMT_LENGTH,
+                   Plot == this_plot) |>  
+            # convert gas concentrations to µmol (CO2) or nmol (CH4)
+            mutate(
+                CO2_umol_m2 = ffi_ppm_to_umol(CO2, 
+                                              volume = this_vol,
+                                              temp = this_tair,
+                                              atm = this_pressure) / COLLAR_AREA,
+                CH4_nmol_m2 = ffi_ppb_to_nmol(CH4, 
+                                              volume = this_vol,
+                                              temp = this_tair,
+                                              atm = this_pressure) / COLLAR_AREA
+            ) ->
+            this_7810data
+        
+    })
+    return(this_7810data)
+}
+
 dates_to_process <- unique(md_all$Date)
 # TESTING ONLY -- do just one date
 # Comment this out for real use!
@@ -199,6 +228,8 @@ for(i in seq_along(dates_to_process)) {
         next
     }
     
+    # For each date d, process each row, finding matching 7810 data
+    # (using offsets from script 2) and computing fluxes
     co2_fluxes <- list()
     ch4_fluxes <- list()
     success_count <- 0
@@ -213,28 +244,9 @@ for(i in seq_along(dates_to_process)) {
         # Find the air temperature corresponding to these data
         this_tair <- wx_thisyear$Value_MAC[which.min(abs(this_start - wx_thisyear$TIMESTAMP))]
         
-        # Isolate, based on the clock offsets for this day and plot, 
-        # the LI-7810 concentration data for this row of the metadata
-        # table (i.e., for this label=collar and plot)
-        suppressMessages({
-            li7810dat |> 
-                filter(TIMESTAMP >= this_start + this_offset, 
-                       TIMESTAMP <= this_start + this_offset + MSMT_LENGTH,
-                       Plot == this_plot) |>  
-                # convert gas concentrations to µmol (CO2) or nmol (CH4)
-                mutate(
-                    CO2_umol_m2 = ffi_ppm_to_umol(CO2, 
-                                               volume = this_vol,
-                                               temp = this_tair,
-                                               atm = this_pressure) / COLLAR_AREA,
-                    CH4_nmol_m2 = ffi_ppb_to_nmol(CH4, 
-                                               volume = this_vol,
-                                               temp = this_tair,
-                                               atm = this_pressure) / COLLAR_AREA
-                ) ->
-                this_7810data
-            
-        })
+        # Find the relevant 7810 data
+        this_7810data <- isolate_7810_data(li7810dat, this_start, this_offset,
+                                           this_vol, this_tair, this_pressure)
         
         if(nrow(this_7810data) == 0) {
             message("\tno 7810 data available at ", this_start)
@@ -279,6 +291,7 @@ for(i in seq_along(dates_to_process)) {
         rm(co2f, ch4f)
     } # for msmt
     
+    # Combine CO2 and CH4 fluxes for this date, save, and log
     bind_rows(co2_fluxes) |> 
         bind_cols(bind_rows(ch4_fluxes)) |> 
         mutate(metadata_row = i) ->
