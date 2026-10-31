@@ -18,6 +18,7 @@ Raw_Data/LI7810_already_split_files.csv
 
 # Log files
 /Processed_Data/logs/*.log
+/Processed_Data/logs/*.csv
 
 # Output plots
 /Processed_Data/*.pdf

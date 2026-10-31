@@ -36,16 +36,23 @@ COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
 # The output of this script: computed fluxes
 TEMP_FLUX_DIR <- file.path(PROCESSED_DIR, "temporary_fluxes")
 
-COLLAR_AREA <- (20 / 2) ^ 2 * pi / (100 * 100) # m2
+COLLAR_AREA <- (20 / 2) ^ 2 * pi / (100 * 100) # 20 cm collar, in m2
 ```
 
+## What this code does
+
+1. Load the LI-8100 metadata file produced by script 1, along with air temperature data from the GCW-W (GCReW) weather station
+2. For each date in the metadata, work through the rows (one per flux measurement) for that date
+3. For each row, isolate the relevant LI-7810 data using clock time offsets from script 2
+4. Compute CO2 and CH4 fluxes
+5. Write fluxes to temporary flux files (based on date) and two log files, per-date and per-row
 
 ```{r log-setup}
 # Set up logs
 start_time <- format(Sys.time(), "%Y%m%d%H%M")
 LOG_FOLDER <- file.path(PROCESSED_DIR, "logs")
-ROW_LOG <- file.path(LOG_FOLDER, paste0("rows_", start_time, ".log"))
-DATE_LOG <- file.path(LOG_FOLDER, paste0("dates_", start_time, ".log"))
+ROW_LOG <- file.path(LOG_FOLDER, paste0("rows_", start_time, ".csv"))
+DATE_LOG <- file.path(LOG_FOLDER, paste0("dates_", start_time, ".csv"))
 
 # Logging functions
 log_date <- function(date, n_metadata_rows, n_obs, 
@@ -56,23 +63,20 @@ log_date <- function(date, n_metadata_rows, n_obs,
         sep = ",", file = DATE_LOG, append = TRUE)
     cat("\n", file = DATE_LOG, append = TRUE)
 }
-# Write header row; use formals() to get the names of the columns being
-# written so we don't have to change this if the function arguments change
-#do.call("log_date", as.list(names(formals(log_date))))
+# Write header row in empty new file
 cat("date,n_metadata_rows,n_obs,offsets_available,n_flux_success,note\n", 
     file = DATE_LOG)
 
-log_row <- function(metadata_row, date, plot, time_start, offset, n_obs, 
-                    co2_flux_success, ch4_flux_success, 
+log_row <- function(metadata_row, date, plot, time_start, offset, tair,
+                    n_obs, co2_flux_success, ch4_flux_success, 
                     note = "") {
-    cat(metadata_row, as.character(date), plot, time_start, offset, n_obs, 
-        co2_flux_success, ch4_flux_success, note,
+    cat(metadata_row, as.character(date), plot, time_start, offset, tair,
+        n_obs, co2_flux_success, ch4_flux_success, note,
         sep = ",", file = ROW_LOG, append = TRUE)
     cat("\n", file = ROW_LOG, append = TRUE)
 }
-# Write header row
-#do.call("log_row", as.list(names(formals(log_row))))
-cat("metadata_row,date,plot,time_start,offset,n_obs,co2_flux_success,ch4_flux_success,note\n",
+# Write header row in empty new file
+cat("metadata_row,date,plot,time_start,offset,tair,n_obs,co2_flux_success,ch4_flux_success,note\n",
     file = ROW_LOG)
 ```
 
@@ -128,9 +132,9 @@ for(f in wx_files) {
 }
 ```
 
-# Data matching and flux computation
+# Flux computation prep
 
-```{r compute_fluxes}
+```{r compute-fluxes-prep}
 
 # Utility function
 isolate_7810_data <- function(li7810dat, this_start, this_offset,
@@ -145,14 +149,16 @@ isolate_7810_data <- function(li7810dat, this_start, this_offset,
                    Plot == this_plot) |>  
             # convert gas concentrations to µmol (CO2) or nmol (CH4)
             mutate(
-                CO2_umol_m2 = ffi_ppm_to_umol(CO2, 
-                                              volume = this_vol,
-                                              temp = this_tair,
-                                              atm = this_pressure) / COLLAR_AREA,
-                CH4_nmol_m2 = ffi_ppb_to_nmol(CH4, 
-                                              volume = this_vol,
-                                              temp = this_tair,
-                                              atm = this_pressure) / COLLAR_AREA
+                CO2_umol_m2 = 
+                    ffi_ppm_to_umol(CO2, 
+                                    volume = this_vol,
+                                    temp = this_tair,
+                                    atm = this_pressure) / COLLAR_AREA,
+                CH4_nmol_m2 = 
+                    ffi_ppb_to_nmol(CH4, 
+                                    volume = this_vol,
+                                    temp = this_tair,
+                                    atm = this_pressure) / COLLAR_AREA
             ) ->
             this_7810data
         
@@ -164,7 +170,13 @@ dates_to_process <- unique(md_all$Date)
 # TESTING ONLY -- do just one date
 # Comment this out for real use!
 dates_to_process <- ymd("2024-08-09") 
+```
 
+There are `r length(dates_to_process)` dates to process.
+
+# Flux computation
+
+```{r compute_fluxes}
 for(i in seq_along(dates_to_process)) {
     d <- dates_to_process[i]
     message(i, "/", length(dates_to_process), ": ", d)
@@ -253,7 +265,7 @@ for(i in seq_along(dates_to_process)) {
             log_row(metadata_row = this_mdrow,
                     date = d, plot = this_plot, 
                     time_start = as.character(this_start),
-                    offset = this_offset, n_obs = 0,
+                    offset = this_offset, tair = NA, n_obs = 0,
                     co2_flux_success = NA, ch4_flux_success = NA,
                     note = "No 7810 data")
             #log_row(date = md_this_offsets$)
@@ -262,21 +274,26 @@ for(i in seq_along(dates_to_process)) {
         
         # Compute fluxes. Because of the process used in 2-Clock_Offsets.R,
         # we set don't use deadband as that's already been accounted for
-        md_this_offsets$wx_tair[msmt] <- this_tair
-        co2f <- ffi_compute_fluxes(this_7810data,
-                                   group_column = NULL, 
-                                   time_column = "TIMESTAMP", 
-                                   gas_column = "CO2_umol_m2")
-        co2_success <- exists("co2f") & !is.na(co2f$lin_flux.estimate)
+        co2f <- tibble()
+        try({
+            co2f <- ffi_compute_fluxes(this_7810data,
+                                       group_column = NULL, 
+                                       time_column = "TIMESTAMP", 
+                                       gas_column = "CO2_umol_m2")
+        })
+        co2_success <- ncol(co2f) > 0 & !is.na(co2f$lin_flux.estimate)
         success_count <- success_count + co2_success
         colnames(co2f) <- paste0("co2_", colnames(co2f))
         co2_fluxes[[msmt]] <- co2f
         
-        ch4f <- ffi_compute_fluxes(this_7810data,
-                                   group_column = NULL, 
-                                   time_column = "TIMESTAMP", 
-                                   gas_column = "CH4_nmol_m2")
-        ch4_success <- exists("ch4f") & !is.na(ch4f$lin_flux.estimate)
+        ch4f <- tibble()
+        try({
+            ch4f <- ffi_compute_fluxes(this_7810data,
+                                       group_column = NULL, 
+                                       time_column = "TIMESTAMP", 
+                                       gas_column = "CH4_nmol_m2")
+        })
+        ch4_success <- ncol(ch4f) > 0 & !is.na(ch4f$lin_flux.estimate)
         colnames(ch4f) <- paste0("ch4_", colnames(ch4f))
         ch4_fluxes[[msmt]] <- ch4f
         
@@ -284,6 +301,7 @@ for(i in seq_along(dates_to_process)) {
                 date = d, plot = this_plot, 
                 time_start = as.character(this_start), 
                 offset = this_offset, 
+                tair = this_tair,
                 n_obs = nrow(this_7810data),
                 co2_flux_success = co2_success, 
                 ch4_flux_success = ch4_success)
@@ -296,7 +314,7 @@ for(i in seq_along(dates_to_process)) {
         bind_cols(bind_rows(ch4_fluxes)) |> 
         mutate(metadata_row = i) ->
         fluxes
-    message("\tcombining and saving ", nrow(fluxes), " fluxes")
+    message("\tsaving ", nrow(fluxes), " fluxes")
     
     write_parquet(fluxes, file.path(TEMP_FLUX_DIR, paste0(gsub("-", "", d), ".parquet")))
     
@@ -306,6 +324,5 @@ for(i in seq_along(dates_to_process)) {
              offsets_available = TRUE, 
              n_flux_success = success_count)
 } # for i
-
 ```
 
