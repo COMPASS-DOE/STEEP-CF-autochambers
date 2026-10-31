@@ -16,6 +16,9 @@ Raw_Data/LI7810_already_split_files.csv
 !Raw_Data/LI7810_20240608.parquet
 !Raw_Data/LI7810_20240809.parquet
 
+# Log files
+/Processed_Data/logs/*.log
+
 # Output plots
 /Processed_Data/*.pdf
 
