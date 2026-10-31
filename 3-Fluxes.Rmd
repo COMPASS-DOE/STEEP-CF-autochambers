@@ -152,8 +152,8 @@ for(i in seq_along(dates_to_process)) {
         this_start <- md_this_offsets$start_time[msmt]
         this_offset <- md_this_offsets$final_clock_offset[msmt]
         this_plot <- md_this_offsets$Plot[msmt]
-        this_vol <- md_this_offsets$Vtotal[msmt] / 100^3 # m3
-        this_pressure <- md_this_offsets$Pressure[msmt]
+        this_vol <- md_this_offsets$Vtotal[msmt] / 100^3 # cm3 to m3
+        this_pressure <- md_this_offsets$Pressure[msmt] * 1000 # kPa to Pa
         
         # Find the air temperature corresponding to these data
         this_tair <- wx_thisyear$Value_MAC[which.min(abs(this_start - wx_thisyear$TIMESTAMP))]
