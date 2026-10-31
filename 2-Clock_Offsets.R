@@ -148,21 +148,6 @@ if(file.exists(li7810file)) {
 }
 message("Concentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
 
-# Plot-to-7810 mapping ----
-
-# The mapping from 7810s to the plots they're in. Note that this is very
-# fragile; if we ever change machines, we'll need to completely redo this!
-li7810_map <- tribble(~SN,           ~Plot,
-                      "TG10-01746",  "Salt",
-                      "TG10-01725",  "Fresh",
-                      "TG10-01712",  "Control")
-li7810dat |>
-    left_join(li7810_map, by = "SN", relationship = "many-to-one") ->
-    li7810dat
-if(any(is.na(li7810dat$Plot))) {
-    stop("There are unknown SNs in this data file!")
-}
-
 ## Matchy match ----
 
 if(nrow(plot_offsets) > 0 &&

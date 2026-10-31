@@ -35,6 +35,8 @@ COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
 
 # The output of this script: computed fluxes
 TEMP_FLUX_DIR <- file.path(PROCESSED_DIR, "temporary_fluxes")
+
+COLLAR_AREA <- (20 / 2) ^ 2 * pi / (100 * 100) # m2
 ```
 
 ## Load metadata
@@ -149,7 +151,7 @@ for(i in seq_along(dates_to_process)) {
     for(msmt in seq_len(nrow(md_this_offsets))) {
         this_start <- md_this_offsets$start_time[msmt]
         this_offset <- md_this_offsets$final_clock_offset[msmt]
-        this_label <- md_this_offsets$label[msmt]
+        this_plot <- md_this_offsets$Plot[msmt]
         this_vol <- md_this_offsets$Vtotal[msmt] / 100^3 # m3
         this_pressure <- md_this_offsets$Pressure[msmt]
         
@@ -162,17 +164,18 @@ for(i in seq_along(dates_to_process)) {
         suppressMessages({
             li7810dat |> 
                 filter(TIMESTAMP >= this_start + this_offset, 
-                       TIMESTAMP <= this_start + this_offset + MSMT_LENGTH) |>  
+                       TIMESTAMP <= this_start + this_offset + MSMT_LENGTH,
+                       Plot == this_plot) |>  
                 # convert gas concentrations to µmol (CO2) or nmol (CH4)
                 mutate(
-                    CO2_umol = ffi_ppm_to_umol(CO2, 
+                    CO2_umol_m2 = ffi_ppm_to_umol(CO2, 
                                                volume = this_vol,
                                                temp = this_tair,
-                                               atm = this_pressure),
-                    CH4_nmol = ffi_ppb_to_nmol(CH4, 
+                                               atm = this_pressure) / COLLAR_AREA,
+                    CH4_nmol_m2 = ffi_ppb_to_nmol(CH4, 
                                                volume = this_vol,
                                                temp = this_tair,
-                                               atm = this_pressure)
+                                               atm = this_pressure) / COLLAR_AREA
                 ) ->
                 this_7810data
             
@@ -189,19 +192,19 @@ for(i in seq_along(dates_to_process)) {
         co2f <- ffi_compute_fluxes(this_7810data,
                                    group_column = NULL, 
                                    time_column = "TIMESTAMP", 
-                                   gas_column = "CO2_umol")
+                                   gas_column = "CO2_umol_m2")
         colnames(co2f) <- paste0("co2_", colnames(co2f))
         co2_fluxes[[msmt]] <- co2f
         
         ch4f <- ffi_compute_fluxes(this_7810data,
                                    group_column = NULL, 
                                    time_column = "TIMESTAMP", 
-                                   gas_column = "CH4_nmol")
+                                   gas_column = "CH4_nmol_m2")
         colnames(ch4f) <- paste0("ch4_", colnames(ch4f))
         ch4_fluxes[[msmt]] <- ch4f
         
         
-    }
+    } # for msmt
     
     bind_rows(co2_fluxes) |> 
         bind_cols(bind_rows(ch4_fluxes)) |> 
@@ -211,10 +214,7 @@ for(i in seq_along(dates_to_process)) {
     
     write_parquet(fluxes, file.path(TEMP_FLUX_DIR, paste0(gsub("-", "", d), ".parquet")))
     
-    # TODO: script 2 needs to include 7810SN in the metadata
-    # Then we use that here
-    
-}
+} # for i
 
 ```
 
