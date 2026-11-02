@@ -37,6 +37,8 @@ COLLAR_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-collar-specific.csv")
 TEMP_FLUX_DIR <- file.path(PROCESSED_DIR, "temporary_fluxes")
 
 COLLAR_AREA <- (20 / 2) ^ 2 * pi / (100 * 100) # 20 cm collar, in m2
+
+FINAL_FLUX_FILE <- file.path(PROCESSED_DIR, "SoilFluxes_final.parquet")
 ```
 
 ## What this code does
@@ -113,7 +115,7 @@ if(file.exists(COLLAR_OFFSET_FILE)) {
 
 ```
 
-# Load weather data
+## Load weather data
 
 ```{r weather-data}
 wx_files <- list.files("weather_data/", 
@@ -132,7 +134,7 @@ for(f in wx_files) {
 }
 ```
 
-# Flux computation prep
+## Flux computation prep
 
 ```{r compute-fluxes-prep}
 
@@ -174,7 +176,7 @@ dates_to_process <- ymd("2024-08-09")
 
 There are `r length(dates_to_process)` dates to process.
 
-# Flux computation
+## Flux computation
 
 ```{r compute_fluxes}
 for(i in seq_along(dates_to_process)) {
@@ -326,3 +328,40 @@ for(i in seq_along(dates_to_process)) {
 } # for i
 ```
 
+## Final outputs
+
+```{r final-outputs-prep}
+fluxfiles <- list.files(TEMP_FLUX_DIR, pattern = "parquet*", full.names = TRUE)
+```
+
+I see `r length(fluxfiles)` flux files.
+
+```{r final-outputs}
+fluxes <- list()
+for(f in fluxfiles) {
+    fluxes[[f]] <- read_parquet(f)
+}
+
+fluxes <- bind_rows(fluxes)
+
+ggplot(fluxes, aes(co2_lin_flux.estimate)) + geom_histogram(bins = 30) +
+    xlab(paste("co2_lin_flux.estimate (µmol/m2/s"))
+
+ggplot(fluxes, aes(co2_lin_r.squared)) + geom_histogram(bins = 30)
+
+ggplot(fluxes, aes(ch4_lin_flux.estimate)) + geom_histogram(bins = 30) +
+    xlab(paste("co2_lin_flux.estimate (nmol/m2/s"))
+
+ggplot(fluxes, aes(ch4_lin_r.squared)) + geom_histogram(bins = 30)
+
+message("Writing ", FINAL_FLUX_FILE)
+write_parquet(fluxes, FINAL_FLUX_FILE)
+```
+
+
+
+## Reproducibility
+
+```{r reproduciblity}
+sessionInfo()
+```
