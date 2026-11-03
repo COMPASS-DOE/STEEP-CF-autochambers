@@ -169,6 +169,23 @@ ch4br
 ## Plot by Port Label (ie., by the collar)
 ```{r gases over time by collar, echo=FALSE}
 
+#add the flood time periods: 
+shaded_ranges <- data.frame(
+  xmin = as.POSIXct(c(
+    "2026-06-08 05:00:00",
+    "2026-06-09 05:00:00",
+    "2026-06-10 05:00:00",
+    "2026-06-11 05:00:00"
+  ), format = "%Y-%m-%d %H:%M:%S", tz = "EST"),
+
+  xmax = as.POSIXct(c(
+    "2026-06-08 15:00:00",
+    "2026-06-09 15:00:00",
+    "2026-06-10 15:00:00",
+    "2026-06-11 15:00:00"
+  ), format = "%Y-%m-%d %H:%M:%S", tz = "EST")
+)
+
 #make color = port label 
 co2br <- ggplot(dat_mod, aes(datetime, FCO2.LIN, color = Collar)) + 
   facet_wrap(~Plot, nrow = 3, scales = "free") + 
@@ -184,12 +201,21 @@ co2br <- ggplot(dat_mod, aes(datetime, FCO2.LIN, color = Collar)) +
   scale_x_datetime(
     date_breaks = "1 day",      # Sets the interval for the breaks
     date_labels = "%b %d"         # Formats the timestamp display
+  ) + 
+  #scale_y_continuous(limits = c(-1, 35)) + 
+  geom_rect(
+    data = shaded_ranges,
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    fill = "lightblue",
+    alpha = 0.2,
+    inherit.aes = FALSE
   )
 co2br
 
 ch4br <- ggplot(dat_mod, aes(datetime, FCH4.LIN, color = Collar)) + 
   facet_wrap(~Plot, nrow = 3, scales = "free") + 
   geom_point(size=2) + theme_classic()+
+    geom_hline(yintercept = 0) + 
   labs(title= "7810 Auto Chamber Data", x=" ") +
   ylab(expression(paste( CH [4], " Flux (nmol m"^-2* " s"^-1*")"))) +
   theme(legend.title = element_blank()) + 
@@ -200,13 +226,22 @@ ch4br <- ggplot(dat_mod, aes(datetime, FCH4.LIN, color = Collar)) +
   scale_x_datetime(
     date_breaks = "1 day",      # Sets the interval for the breaks
     date_labels = "%b %d"         # Formats the timestamp display
+  )+ 
+  #scale_y_continuous(limits = c(-2, 1)) + 
+  geom_rect(
+    data = shaded_ranges,
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    fill = "lightblue",
+    alpha = 0.2,
+    inherit.aes = FALSE
   )
 ch4br
 
 n2obr <- ggplot(dat_mod, aes(datetime, FN2O.LIN, color = Collar)) + 
   facet_wrap(~Plot, nrow = 3, scales = "free") + 
   geom_point(size=2) + theme_classic()+
-  labs(title= "7810 Auto Chamber Data", x=" ") +
+    geom_hline(yintercept = 0) + 
+  labs(title= "7820 Auto Chamber Data", x=" ") +
   ylab(expression(paste( N[2], "O Flux (nmol m"^-2* " s"^-1*")"))) +
   theme(legend.title = element_blank()) + 
   theme(axis.title.x = element_text(size=12), axis.text = element_text(size=10),
@@ -216,6 +251,14 @@ n2obr <- ggplot(dat_mod, aes(datetime, FN2O.LIN, color = Collar)) +
   scale_x_datetime(
     date_breaks = "1 day",      # Sets the interval for the breaks
     date_labels = "%b %d"         # Formats the timestamp display
+  )+ 
+  #scale_y_continuous(limits = c(-0.5, 1.5)) + 
+  geom_rect(
+    data = shaded_ranges,
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    fill = "lightblue",
+    alpha = 0.2,
+    inherit.aes = FALSE
   )
 n2obr
 ```
