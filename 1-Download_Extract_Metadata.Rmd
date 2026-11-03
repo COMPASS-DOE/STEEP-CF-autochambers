@@ -38,7 +38,7 @@ PROCESSED_FILE_FINAL <- gsub("processed.parquet",
 
 1. Download ALL the LI-8100 and 7810 data files from the Google Drive. Existing files will be skipped.
 2. Split 7810 files into individual-day Parquet files.
-3. Separate 8100 file into each flux and extract their metadata into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
+3. Separate 8100 files into each flux and extract their metadata into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
 4. The final metadata is saved as `r PROCESSED_FILE_FINAL`.
 
 **Need to figure out how to incorporate the 8100 error log 
@@ -126,6 +126,21 @@ for(f in file.list.7810) {
     
     x <- ffi_read_LI7810(file.path(RAW_DIR, f))
     x$TIMESTAMP <- force_tz(x$TIMESTAMP, "EST")
+    
+    # Add a 'Plot' column to the 7810 data; this is needed by scripts 2 and 3
+    # The mapping from 7810s to the plots they're in. Note that this is very
+    # fragile; if we ever change machines, we'll need to completely redo this!
+    li7810_map <- tribble(~SN,           ~Plot,
+                          "TG10-01746",  "Salt",
+                          "TG10-01725",  "Fresh",
+                          "TG10-01712",  "Control")
+    x |>
+        left_join(li7810_map, by = "SN", relationship = "many-to-one") ->
+        x
+    if(any(is.na(x$Plot))) {
+        stop("There are unknown SNs in this data file!")
+    }
+    
     days <- format(x$TIMESTAMP, "%Y%m%d")
     for(d in unique(days)) {
         # Split files are "LI7810_YYYYMMDD.parquet"
@@ -133,7 +148,7 @@ for(f in file.list.7810) {
         if(file.exists(splitfile)) {
             message("\tAppending to ", splitfile)
             # mmap=FALSE because on Windows the file is otherwise
-            # locked and can't be overwritten below. Alteratively,
+            # locked and can't be overwritten below. Alternatively,
             # we could delete the file.
             prevdata <- read_parquet(splitfile, mmap = FALSE)
         } else {
@@ -146,8 +161,8 @@ for(f in file.list.7810) {
             distinct() |> 
             arrange(TIMESTAMP) |> 
             write_parquet(splitfile)
-        
-    }
+    } # for d
+    
     # Record that we have split this file
     message("\tUpdating ", ALREADY_SPLIT_LIST)
     already_split |> 
@@ -329,7 +344,6 @@ processed %>%
               relationship = "many-to-one") ->
     processed_collars
 
-### Probably need to do some cleaning here on the temperature data 
 message("processed_collars is ", nrow(processed_collars), " x ",
         ncol(processed_collars))
 ```
@@ -351,7 +365,9 @@ ggplot(processed_collars, aes(lines_read)) +
 
 ```{r output}
 message("Writing ", PROCESSED_FILE_FINAL)
-write_parquet(processed_collars, PROCESSED_FILE_FINAL)
+tibble(metadata_row = seq_len(nrow(processed_collars))) |> 
+    bind_cols(processed_collars) |> 
+    write_parquet(PROCESSED_FILE_FINAL)
 ```
 
 ## Reproducibility
