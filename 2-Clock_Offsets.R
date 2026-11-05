@@ -19,7 +19,7 @@ library(arrow)
 
 MSMT_LENGTH <- 90
 
-DATE_TO_PROCESS <- ymd("2024-08-09")
+DATE_TO_PROCESS <- ymd("2026-06-09")
 
 RAW_DIR <- "Raw_Data/"
 PROCESSED_DIR <- "Processed_Data"
@@ -351,7 +351,7 @@ for(pl in plots) {
 
         not_done <- readline(paste0(pl, ": any",
                                     if_else(collar_adjustment_made, " more", ""),
-                                    " collar-specific offsets to change? "))
+                                    " collar-specific offsets to change? (don't enter collar number yet, just affirmative or negative)"))
         not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
         if(not_done) {
             collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
@@ -394,3 +394,4 @@ for(pl in plots) {
 } # for pl
 
 message("All done")
+
