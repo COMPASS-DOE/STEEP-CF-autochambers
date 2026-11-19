@@ -1,6 +1,6 @@
 ---
 title: "1-Download_Extract_Metadata"
-author: "Zoe Read & S. Wilson"
+author: "Ben Bond-Lamberty, Zoe Read & S. Wilson"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -36,8 +36,8 @@ PROCESSED_FILE_FINAL <- gsub("processed.parquet",
 
 ## What this code does
 
-1. Download ALL the LI-8100 and 7810 data files from the Google Drive. Existing files will be skipped.
-2. Split 7810 files into individual-day Parquet files.
+1. Download ALL the LI-8100, 7810, and 7820 data files from the Google Drive. Existing files will be skipped.
+2. Split 7810 and 7820 files into individual-day Parquet files.
 3. Separate 8100 files into each flux and extract their metadata into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
 4. The final metadata is saved as `r PROCESSED_FILE_FINAL`.
 
@@ -172,6 +172,103 @@ for(f in file.list.7810) {
         bind_rows(tibble(file = f, hash = dig, date = Sys.Date())) ->
         already_split
     write_csv(already_split, file = ALREADY_SPLIT_LIST)
+}
+```
+
+
+## Download 7820 data files
+
+```{r download-7820}
+# Filter to necessary files
+files_pulse <- drive_ls(
+  path = GDRIVE_FOLDER,
+  recursive = TRUE,
+  pattern = "TG20.*data$")
+
+message("Found ", nrow(files_pulse), " files")
+
+download_files(files_pulse)
+
+# 7810 files (full paths)
+file.list.7820 <- list.files(path = RAW_DIR,
+                             pattern = "TG20.*data$")
+
+message("We have ", length(file.list.7810), " 7820 files")
+```
+
+## Split 7820 files into per-day files
+
+```{r split-7820-files-prep}
+ALREADY_SPLIT_LIST_7820 <- file.path(RAW_DIR, "LI7820_already_split_files.csv")
+
+if(file.exists(ALREADY_SPLIT_LIST_7820)) {
+    already_split_7820 <- read_csv(ALREADY_SPLIT_LIST_7820, col_types = "ccD")
+} else {
+    already_split_7820 <- tibble(file = character(0), hash = character(0), date = Date(0))    
+}
+```
+
+This is a bit slow, as they're big files, so we keep track of 
+what files have already been split in a simple CSV table `r ALREADY_SPLIT_LIST`.
+
+```{r split-7820-files}
+message("Splitting ", length(file.list.7820), " LI-7820 files")
+for(f in file.list.7820) {
+    # Check whether we've already split this file; name and hash both have to match
+    dig <- digest::digest(file = file.path(RAW_DIR, f))
+    if(nrow(filter(already_split_7820, file == f, hash == dig)) == 1) {
+        message(f, " has already been split; skipping")
+        next
+    }
+    
+    x <- ffi_read_LI7820(file.path(RAW_DIR, f))
+    x$TIMESTAMP <- force_tz(x$TIMESTAMP, "EST")
+    
+    # Add a 'Plot' column to the 7810 data; this is needed by scripts 2 and 3
+    # The mapping from 7810s to the plots they're in. Note that this is very
+    # fragile; if we ever change machines, we'll need to completely redo this!
+    li7820_map <- tribble(~SN,           ~Plot,
+                          "TG20-01746",  "Salt",
+                          "TG20-01182",  "Fresh",
+                          "TG20-01376",  "Control")
+    x |>
+        left_join(li7820_map, by = "SN", relationship = "many-to-one") ->
+        x
+    if(any(is.na(x$Plot))) {
+        stop("There are unknown SNs in this data file!")
+    }
+    
+    days <- format(x$TIMESTAMP, "%Y%m%d")
+    for(d in unique(days)) {
+        # Split files are "LI7820_YYYYMMDD.parquet"
+        splitfile <- file.path(RAW_DIR, paste0("LI7820_", d, ".parquet"))
+        if(file.exists(splitfile)) {
+            message("\tAppending to ", splitfile)
+            # mmap=FALSE because on Windows the file is otherwise
+            # locked and can't be overwritten below. Alternatively,
+            # we could delete the file.
+            prevdata <- read_parquet(splitfile, mmap = FALSE)
+        } else {
+            message("\tCreating ", splitfile)
+            prevdata <- NULL
+        }
+        # Filter to this day, add any previous data, write out
+        x[days == d,] |> 
+            bind_rows(prevdata) |> 
+            distinct() |> 
+            arrange(TIMESTAMP) |> 
+            write_parquet(splitfile)
+    } # for d
+    
+    # Record that we have split this file
+    message("\tUpdating ", ALREADY_SPLIT_LIST_7820)
+    already_split |> 
+        # remove any older entries for this file
+        filter(!file == f) |> 
+        # ...and add a new one
+        bind_rows(tibble(file = f, hash = dig, date = Sys.Date())) ->
+        already_split
+    write_csv(already_split_7820, file = ALREADY_SPLIT_LIST_7820)
 }
 ```
 
