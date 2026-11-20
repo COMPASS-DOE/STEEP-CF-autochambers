@@ -92,7 +92,7 @@ message("Found ", nrow(files_pulse), " files")
 
 download_files(files_pulse)
 
-# 7810 files (full paths)
+# 7810 and 7820 files (full paths)
 file.list.78x0 <- list.files(path = RAW_DIR,
                              pattern = "TG[12]0.*data$")
 
@@ -117,7 +117,8 @@ what files have already been split in a simple CSV table `r ALREADY_SPLIT_LIST`.
 ```{r split-78x0-files}
 message("Splitting ", length(file.list.78x0), " LI-7810 and LI-7820 files")
 for(f in file.list.78x0) {
-    # Check whether we've already split this file; name and hash both have to match
+    # Check whether we've already split this file;
+    # name and hash both have to match
     dig <- digest::digest(file = file.path(RAW_DIR, f))
     if(nrow(filter(already_split, file == f, hash == dig)) == 1) {
         message(f, " has already been split; skipping")
@@ -131,7 +132,7 @@ for(f in file.list.78x0) {
     } else if(grepl("TG20", f)) {
         x <- ffi_read_LI7820(file.path(RAW_DIR, f))
         instrument <- "LI7820"
-    } else stop("I don't know what this this file is!")
+    } else stop("I don't know what this file is!")
     
     x$TIMESTAMP <- force_tz(x$TIMESTAMP, "EST")
     
@@ -224,7 +225,8 @@ process_obs <- function(dat_raw, model) {
                         TimeClosing = TimeClosing)
     
     # These files have 30 header lines, the column names in line 31,
-    # and then the column units in line 7. We only want the names and then data
+    # and then the column units in line 7. 
+    # We only want the names and then data
     total_lines = length(dat_raw)
     lines_to_skip <- 30
     lines_to_read <- total_lines - 30 - 25
@@ -235,8 +237,8 @@ process_obs <- function(dat_raw, model) {
         return(extracted)
     }
     
-    # We read directly from the string vector; much faster than writing
-    # out and reading back in
+    # We read directly from the string vector; this is much faster
+    # than writing out and reading back in
     dat_read <- read.delim(textConnection(dat_raw),
         skip = lines_to_skip,
         nrows = lines_to_read,
@@ -307,9 +309,9 @@ for (i in seq_along(file.list.8100)) {
     # Add one at end so that 'last' calculation below works for final entry
     l8100 <- c(l8100, length(lines) + 1) 
     
-    # How many result rows are already in the processed table? If identical
-    # to numbers of observations to process, assume we already have this file
-    # and move on
+    # How many result rows are already in the processed table?
+    # If identical to numbers of observations to process, assume 
+    # that we already have this file and move on
     if(nrow(processed) > 0) {
         n_processed <- length(grep(f_no_extension, processed$obs, fixed = TRUE))
         if(n_processed == n_obs) {
