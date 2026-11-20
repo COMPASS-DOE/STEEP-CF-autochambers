@@ -1,6 +1,6 @@
 ---
 title: "1-Download_Extract_Metadata"
-author: "Zoe Read & S. Wilson"
+author: "Ben Bond-Lamberty, Zoe Read & S. Wilson"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -36,8 +36,8 @@ PROCESSED_FILE_FINAL <- gsub("processed.parquet",
 
 ## What this code does
 
-1. Download ALL the LI-8100 and 7810 data files from the Google Drive. Existing files will be skipped.
-2. Split 7810 files into individual-day Parquet files.
+1. Download ALL the LI-8100, 7810, and 7820 data files from the Google Drive. Existing files will be skipped.
+2. Split 7810 and 7820 files into individual-day Parquet files.
 3. Separate 8100 files into each flux and extract their metadata into a metadata sheet. This is slow but we save progress as we go, so data updates don't require re-reading everything.
 4. The final metadata is saved as `r PROCESSED_FILE_FINAL`.
 
@@ -79,30 +79,30 @@ download_files <- function(files_pulse) {
 download_files(files_pulse)
 ```
 
-## Download 7810 data files
+## Download 7810 and 7820 data files
 
 ```{r download-7810}
 # Filter to necessary files
 files_pulse <- drive_ls(
   path = GDRIVE_FOLDER,
   recursive = TRUE,
-  pattern = "TG10.*data$")
+  pattern = "TG[12]0.*data$")
 
 message("Found ", nrow(files_pulse), " files")
 
 download_files(files_pulse)
 
-# 7810 files (full paths)
-file.list.7810 <- list.files(path = RAW_DIR,
-                             pattern = "TG10.*data$")
+# 7810 and 7820 files (full paths)
+file.list.78x0 <- list.files(path = RAW_DIR,
+                             pattern = "TG[12]0.*data$")
 
-message("We have ", length(file.list.7810), " 7810 files")
+message("We have ", length(file.list.78x0), " 7810 and 7820 files")
 ```
 
-## Split 7810 files into per-day files
+## Split 7810 and 7820 files into per-day files
 
-```{r split-7810-files-prep}
-ALREADY_SPLIT_LIST <- file.path(RAW_DIR, "LI7810_already_split_files.csv")
+```{r split-78x0-files-prep}
+ALREADY_SPLIT_LIST <- file.path(RAW_DIR, "LI78x0_already_split_files.csv")
 
 if(file.exists(ALREADY_SPLIT_LIST)) {
     already_split <- read_csv(ALREADY_SPLIT_LIST, col_types = "ccD")
@@ -114,28 +114,40 @@ if(file.exists(ALREADY_SPLIT_LIST)) {
 This is a bit slow, as they're big files, so we keep track of 
 what files have already been split in a simple CSV table `r ALREADY_SPLIT_LIST`.
 
-```{r split-7810-files}
-message("Splitting ", length(file.list.7810), " LI-7810 files")
-for(f in file.list.7810) {
-    # Check whether we've already split this file; name and hash both have to match
+```{r split-78x0-files}
+message("Splitting ", length(file.list.78x0), " LI-7810 and LI-7820 files")
+for(f in file.list.78x0) {
+    # Check whether we've already split this file;
+    # name and hash both have to match
     dig <- digest::digest(file = file.path(RAW_DIR, f))
     if(nrow(filter(already_split, file == f, hash == dig)) == 1) {
         message(f, " has already been split; skipping")
         next
     }
     
-    x <- ffi_read_LI7810(file.path(RAW_DIR, f))
+    # Use the filename to figure out which instrument we're dealing with
+    if(grepl("TG10", f)) {
+        x <- ffi_read_LI7810(file.path(RAW_DIR, f))
+        instrument <- "LI7810"
+    } else if(grepl("TG20", f)) {
+        x <- ffi_read_LI7820(file.path(RAW_DIR, f))
+        instrument <- "LI7820"
+    } else stop("I don't know what this file is!")
+    
     x$TIMESTAMP <- force_tz(x$TIMESTAMP, "EST")
     
-    # Add a 'Plot' column to the 7810 data; this is needed by scripts 2 and 3
-    # The mapping from 7810s to the plots they're in. Note that this is very
+    # Add a 'Plot' column to the data; this is needed by scripts 2 and 3
+    # The mapping from Licors to the plots they're in. Note that this is very
     # fragile; if we ever change machines, we'll need to completely redo this!
-    li7810_map <- tribble(~SN,           ~Plot,
+    li78x0_map <- tribble(~SN,           ~Plot,
                           "TG10-01746",  "Salt",
                           "TG10-01725",  "Fresh",
-                          "TG10-01712",  "Control")
+                          "TG10-01712",  "Control",
+                          "TG20-01746",  "Salt",
+                          "TG20-01182",  "Fresh",
+                          "TG20-01376",  "Control")
     x |>
-        left_join(li7810_map, by = "SN", relationship = "many-to-one") ->
+        left_join(li78x0_map, by = "SN", relationship = "many-to-one") ->
         x
     if(any(is.na(x$Plot))) {
         stop("There are unknown SNs in this data file!")
@@ -143,8 +155,8 @@ for(f in file.list.7810) {
     
     days <- format(x$TIMESTAMP, "%Y%m%d")
     for(d in unique(days)) {
-        # Split files are "LI7810_YYYYMMDD.parquet"
-        splitfile <- file.path(RAW_DIR, paste0("LI7810_", d, ".parquet"))
+        # Split files are "LI78[12]0_YYYYMMDD.parquet"
+        splitfile <- file.path(RAW_DIR, paste0(instrument, "_", d, ".parquet"))
         if(file.exists(splitfile)) {
             message("\tAppending to ", splitfile)
             # mmap=FALSE because on Windows the file is otherwise
@@ -213,7 +225,8 @@ process_obs <- function(dat_raw, model) {
                         TimeClosing = TimeClosing)
     
     # These files have 30 header lines, the column names in line 31,
-    # and then the column units in line 7. We only want the names and then data
+    # and then the column units in line 7. 
+    # We only want the names and then data
     total_lines = length(dat_raw)
     lines_to_skip <- 30
     lines_to_read <- total_lines - 30 - 25
@@ -224,8 +237,8 @@ process_obs <- function(dat_raw, model) {
         return(extracted)
     }
     
-    # We read directly from the string vector; much faster than writing
-    # out and reading back in
+    # We read directly from the string vector; this is much faster
+    # than writing out and reading back in
     dat_read <- read.delim(textConnection(dat_raw),
         skip = lines_to_skip,
         nrows = lines_to_read,
@@ -296,9 +309,9 @@ for (i in seq_along(file.list.8100)) {
     # Add one at end so that 'last' calculation below works for final entry
     l8100 <- c(l8100, length(lines) + 1) 
     
-    # How many result rows are already in the processed table? If identical
-    # to numbers of observations to process, assume we already have this file
-    # and move on
+    # How many result rows are already in the processed table?
+    # If identical to numbers of observations to process, assume 
+    # that we already have this file and move on
     if(nrow(processed) > 0) {
         n_processed <- length(grep(f_no_extension, processed$obs, fixed = TRUE))
         if(n_processed == n_obs) {
