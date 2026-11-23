@@ -152,7 +152,7 @@ message("Concentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
 if(nrow(plot_offsets) > 0 &&
    nrow(plot_offsets[plot_offsets$"Date" == DATE_TO_PROCESS,])) {
     message("WARNING: this date ", DATE_TO_PROCESS, " already exists in ", PLOT_OFFSET_FILE)
-    ok <- askYesNo("Continue, overwriting previous data? ")
+    ok <- askYesNo("Continue, overwriting previous 7810 data? ")
     stopifnot(ok)
 }
 
@@ -417,7 +417,7 @@ message("Concentration data file is ", nrow(li7820dat), " x ", ncol(li7820dat))
 if(nrow(plot_offsets) > 0 &&
    nrow(plot_offsets[plot_offsets$"Date" == DATE_TO_PROCESS,])) {
   message("WARNING: this date ", DATE_TO_PROCESS, " already exists in ", PLOT_OFFSET_FILE)
-  ok <- askYesNo("Continue, overwriting previous data? ")
+  ok <- askYesNo("Continue, overwriting previous 7820 data? ")
   stopifnot(ok)
 }
 
