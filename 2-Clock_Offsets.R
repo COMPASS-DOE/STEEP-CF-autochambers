@@ -43,7 +43,7 @@ PROCESSED_FILE_FINAL <-
 PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-plot-specific.csv")
 if(file.exists(PLOT_OFFSET_FILE)) {
     message("Reading ", PLOT_OFFSET_FILE)
-    plot_offsets <- read_csv(PLOT_OFFSET_FILE, col_types = "Dcdc")
+    plot_offsets <- read_csv(PLOT_OFFSET_FILE, col_types = "Dccdc")
 } else {
     message("Creating new ", PLOT_OFFSET_FILE)
     plot_offsets <- tibble()
@@ -89,8 +89,7 @@ for(ins in ins_table_rows) {
 
     # Read gas concentration data: the day-specific file prepared by script 1
     li78x0file <- file.path(RAW_DIR,
-                            paste0(ins_name,
-                                   "_",
+                            paste0(ins_name, "_",
                                    gsub("-", "", DATE_TO_PROCESS),
                                    ".parquet"))
     if(file.exists(li78x0file)) {
@@ -148,9 +147,13 @@ for(ins in ins_table_rows) {
             mutate(hour = hour(TIMESTAMP)) ->
             li78x0_plot
         message("------------------------------------------------")
-        message(DATE_TO_PROCESS, " ", pl)
+        message(DATE_TO_PROCESS, " ", ins_name, " ", pl)
         message("\tmetadata:  ", nrow(md_plot), " x ", ncol(md_plot))
         message("\tconcentrations: ", nrow(li78x0_plot), " x ", ncol(li78x0_plot))
+        if(nrow(li78x0_plot) == 0) {
+            message("\tWARNING: no concentration data available!")
+            next
+        }
 
         # Find the metadata group for each row in the 78x0 observations,
         # as well as the 'context window' group, which is the group with +/-
@@ -191,6 +194,7 @@ for(ins in ins_table_rows) {
         current_offset <- alg_offset
         offset_type <- "algorithmic"
 
+        # Plot R2 values as a function of potential offsets
         p_offset_results <- ggplot(offset_results, aes(x = offset, y = mean_R2)) +
             geom_point() +
             xlab("Tested clock offset (s)") +
@@ -329,7 +333,7 @@ for(ins in ins_table_rows) {
 
             not_done <- readline(paste0(ins_name, " ", pl, ": any",
                                         if_else(collar_adjustment_made, " more", ""),
-                                        " collar-specific offsets to change? (do not enter collar number yet)"))
+                                        " collar-specific offsets to change (do not enter collar number yet)?"))
             not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
             if(not_done) {
                 collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
@@ -373,6 +377,4 @@ for(ins in ins_table_rows) {
 
 } # for ins
 
-
 message("All done")
-
