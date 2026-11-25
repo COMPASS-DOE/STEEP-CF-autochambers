@@ -3,7 +3,7 @@
 
 ## Goals of this code:
 
-# 1.  Provide fast and easy matching to align 8100 and 7810 timestamps
+# 1.  Provide fast and easy matching to align 8100 and 78x0 timestamps
 
 message("Welcome to 2-Clock_Offsets.R")
 
@@ -21,6 +21,18 @@ MSMT_LENGTH <- 90
 
 DATE_TO_PROCESS <- ymd("2026-06-09")
 
+source("utilities.R")
+
+# The POSSIBLE_LI78x0_TABLE tells us, for each "Instrument" (which is
+# used in the LI78x0 filename written by script 1), (1) the name of the
+# variable to use in the matching process and (2) its units
+POSSIBLE_LI78x0_TABLE <-
+    tribble(~Instrument, ~Matching_variable, ~Units,
+            "LI7810",    "CO2",              "ppm",
+            "LI7820",    "H2O",              "ppm")
+message("Available instruments to match: ",
+        paste(POSSIBLE_LI78x0_TABLE$Instrument, collapse = ", "))
+
 RAW_DIR <- "Raw_Data/"
 PROCESSED_DIR <- "Processed_Data"
 
@@ -31,7 +43,7 @@ PROCESSED_FILE_FINAL <-
 PLOT_OFFSET_FILE <- file.path(PROCESSED_DIR, "offsets-plot-specific.csv")
 if(file.exists(PLOT_OFFSET_FILE)) {
     message("Reading ", PLOT_OFFSET_FILE)
-    plot_offsets <- read_csv(PLOT_OFFSET_FILE, col_types = "Dcdc")
+    plot_offsets <- read_csv(PLOT_OFFSET_FILE, col_types = "Dccdc")
 } else {
     message("Creating new ", PLOT_OFFSET_FILE)
     plot_offsets <- tibble()
@@ -45,78 +57,6 @@ if(file.exists(COLLAR_OFFSET_FILE)) {
     message("Creating new ", COLLAR_OFFSET_FILE)
     collar_specific_offsets <- tibble()
 }
-
-## Utility functions ----
-
-# Utility function: quick_match_numeric()
-# for each timestamp x, determine the y timestamps that fall within
-# x - left_extra and x + length + right_extra
-# returns a numeric vector of length y giving which x matched; NA otherwise
-quick_match_numeric <- function(x, y, length = MSMT_LENGTH,
-                                left_extra = 0, right_extra = 0) {
-    stopifnot(tz(x) == tz(y)) # defensive assertion
-    matches <- rep(NA_integer_, length(y))
-    for(i in seq_along(x)) {
-        matches[(y >= x[i] - left_extra & y < x[i] + length + right_extra)] <- i
-    }
-    return(matches)
-}
-# Test code
-# two observations in the metadata...
-testx <- ymd_hms("2026-10-16 11:31:00", "2026-10-16 11:35:00")
-# ...10 minutes of data
-testy <- seq.POSIXt(from = ymd_hms("2026-10-16 11:30:00"),
-                    to = ymd_hms("2026-10-16 11:40:00"),
-                    by = "1 sec")
-# should be 2 x 90 seconds = 180 matches at the correct times
-stopifnot(sum(!is.na(quick_match_numeric(testx, testy))) ==
-              2 * MSMT_LENGTH)
-
-# Utility function: search_offsets()
-# Given a series of observations at specific times (i.e., LI7810), and nominal
-# start times of each observation (LI8100), try varying time offsets between
-# the two clocks to determine what gives the best results--specifically,
-# the highest average amount of variance explained
-search_offsets <- function(recorded_start_times, obs_time, obs_x, mst_length) {
-    stopifnot(length(obs_time) == length(obs_x))
-    msmt_indices <- 0:(mst_length - 1)
-
-    # THE OFFSET IS WHAT NEEDS TO BE **ADDED** TO THE RECORDED START TIME
-    message("\t\tsearch every 5 seconds within ±2 minutes")
-    search_offsets1 <- paste(seq(0, 2 * 60, by = 5), "sec")
-    message("\t\tsearch every 10 seconds from ±2 to ±10 minutes")
-    search_offsets2 <- paste(seq(2 * 60, 10 * 60, by = 10), "sec")
-    offsets_positive <- as.period(c(search_offsets1, search_offsets2))
-    offsets <- c(offsets_positive, -offsets_positive)
-
-    # Set up results data frame with one row per offset
-    results <- tibble(offset = sort(unique(offsets)),
-                      mean_R2 = NA_real_)
-    message("\t\t", nrow(results), " offsets x ",
-            length(recorded_start_times) ," starts")
-
-    # For each potential offset, adjust start times and fit models
-    pb <- txtProgressBar(min = 1, max = nrow(results), style = 3)
-    for(i in seq_len(nrow(results))) {
-        setTxtProgressBar(pb, i)
-        i_offset <- results$offset[i]
-        test_start_times <- recorded_start_times + i_offset
-        # For each test start time, fit a model and record R2
-        r2 <- 0.0
-        n <- 0
-        for(j in seq_along(test_start_times)) {
-            idx <- which.min(abs(obs_time - test_start_times[j]))
-            try({
-                m <- lm(obs_x[idx + msmt_indices] ~ msmt_indices)
-                r2 <- r2 + summary(m)$adj.r.squared
-                n <- n + 1
-            })
-        }
-        results$mean_R2[i] <- r2 / n
-    }
-    results |> arrange(desc(mean_R2))
-}
-
 
 # Read metadata from script 1 ----
 
@@ -133,531 +73,308 @@ if(nrow(md) == 0) {
     stop("No metadata for this date!")
 }
 
-# Read gas concentration data ----
+# ===================================================
+# Main loop: go through possible LI78x0 instruments
+# ===================================================
 
-# Read the day-specific file prepared by script 1
-li7810file <- file.path(RAW_DIR, paste0("LI7810_", gsub("-", "", DATE_TO_PROCESS), ".parquet"))
-if(file.exists(li7810file)) {
-    message("Reading ", li7810file)
-    li7810dat <- read_parquet(li7810file)
-    li7810dat$TIMESTAMP <- force_tz(li7810dat$TIMESTAMP, "EST")
-} else {
-    # else what?
-    stop("There are no 7810 data available for ", DATE_TO_PROCESS, "!")
-}
-message("Concentration data file is ", nrow(li7810dat), " x ", ncol(li7810dat))
+ins_table_rows <- seq_len(nrow(POSSIBLE_LI78x0_TABLE))
+#ins_table_rows <- 1 # for testing
+for(ins in ins_table_rows) {
+    ins_name <- POSSIBLE_LI78x0_TABLE$Instrument[ins]
+    ins_matchvar <- POSSIBLE_LI78x0_TABLE$Matching_variable[ins]
+    ins_units <- POSSIBLE_LI78x0_TABLE$Units[ins]
 
-## Matchy match ----
+    message("\n==============================================")
+    message(ins_name, " matching variable: ", ins_matchvar, " (", ins_units, ")")
 
-if(nrow(plot_offsets) > 0 &&
-   nrow(plot_offsets[plot_offsets$"Date" == DATE_TO_PROCESS,])) {
-    message("WARNING: this date ", DATE_TO_PROCESS, " already exists in ", PLOT_OFFSET_FILE)
-    ok <- askYesNo("Continue, overwriting previous 7810 data? ")
-    stopifnot(ok)
-}
+    # Read gas concentration data: the day-specific file prepared by script 1
+    li78x0file <- file.path(RAW_DIR,
+                            paste0(ins_name, "_",
+                                   gsub("-", "", DATE_TO_PROCESS),
+                                   ".parquet"))
+    if(file.exists(li78x0file)) {
+        message("Reading ", li78x0file)
+        li78x0dat <- read_parquet(li78x0file)
+        message("\tConcentration data file is ", nrow(li78x0dat), " x ", ncol(li78x0dat))
 
-# For each plot, combine algorithmic analysis with human QAQC to set
-# (1) The overall offset between 8100 (metadata) and 7810 (concentration) clocks
-# (2) Any collar-specific offsets
-plots <- unique(md$Plot)
-#plots <- "Control" # for testing
-for(pl in plots) {
-    md |>
-        filter(Plot == pl) |>
-        arrange(start_time) |>
-        select(label, start_time, end_time) ->
-        md_plot
-    md_plot$group <- seq_len(nrow(md_plot))
-    li7810dat |>
-        filter(Plot == pl) |>
-        select(TIMESTAMP, CO2) |>
-        arrange(TIMESTAMP) |>
-        mutate(hour = hour(TIMESTAMP)) ->
-        li7810_plot
-    message("------------------------------------------------")
-    message(DATE_TO_PROCESS, " ", pl)
-    message("\tmetadata:  ", nrow(md_plot), " x ", ncol(md_plot))
-    message("\tconcentrations: ", nrow(li7810_plot), " x ", ncol(li7810_plot))
+        # Prep 1: Make sure timestamps are EST
+        li78x0dat$TIMESTAMP <- force_tz(li78x0dat$TIMESTAMP, "EST")
+        # Prep 2: We could use nonstandard evaluation below, but I find it
+        # easier to create a new column for this instrument's match variable
+        li78x0dat$matchvar <- li78x0dat[[ins_matchvar]]
+    } else {
+        message("WARNING: no file available for ", ins_name, " on ", DATE_TO_PROCESS)
+        next
+    }
 
-    # Find the metadata group for each row in the 7810 observations,
-    # as well as the 'context window' group, which is the group with +/-
-    # some amount of time on either side
-    li7810_plot$group <-
-        quick_match_numeric(md_plot$start_time,
-                            li7810_plot$TIMESTAMP,
-                            length = MSMT_LENGTH)
-    li7810_plot$context_window <-
-        quick_match_numeric(md_plot$start_time,
-                            li7810_plot$TIMESTAMP,
-                            length = MSMT_LENGTH,
-                            left_extra = 60, right_extra = 60)
+    ## Matchy match ----
 
-    # For plotting, we want to associate the start time with each
-    # context window, so that each group's data can be plotted with
-    # context (previous and following 7810 data that do not, currently,
-    # 'match')
-    li7810_plot |>
-        left_join(md_plot, by = c("context_window" = "group")) |>
-        mutate(start_time_offset = as.numeric(TIMESTAMP - start_time)) ->
-        li7810_plotgroups
-
-    # Algorithmic plot-level offset ----
-
-    # Search for the best offset between the LI8100 and LI7810 clocks
-    message("\tsearching for best-performing clock offset...")
-    offset_results <- search_offsets(md_plot$start_time,
-                                     li7810_plotgroups$TIMESTAMP,
-                                     li7810_plotgroups$CO2,
-                                     mst_length = MSMT_LENGTH)
-
-    offset_results |>
-        filter(mean_R2 == max(mean_R2)) |>
-        summarise(mean_offset = mean(offset)) |>
-        pull(mean_offset) ->
-        alg_offset
-    current_offset <- alg_offset
-    offset_type <- "algorithmic"
-
-    p_offset_results <- ggplot(offset_results, aes(x = offset, y = mean_R2)) +
-        geom_point() +
-        xlab("Tested clock offset (s)") +
-        ggtitle(paste(DATE_TO_PROCESS, pl, "offset analysis; best =", alg_offset))
-    print(p_offset_results)
-    readline("Hit <Return> to see next plot: ")
-
-    # Save
-    DATE_NO_DASHES <- gsub("-", "", DATE_TO_PROCESS)
-    pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl, "_alloffsets.pdf"))
-    message("Saving ", pfn)
-    ggsave(pfn, width = 8, height = 5)
-
-    # Show user the data for this plot and date, with vertical lines
-    # to mark the algorithmic and (if desired, manual) offset
-    done <- FALSE
-    while(!done) {
-        # the clocks won't drift super fast; for plotting clarity,
-        # only show a subselection of hours in the day
-        li7810_plotgroups |>
-            filter(hour %% 4 == 0) |>
-            mutate(in_offset = start_time_offset >= 0 + current_offset &
-                       start_time_offset <= MSMT_LENGTH + current_offset) |>
-            # normalize CO2 just to make more effective use of graphing space
-            group_by(hour) |>
-            mutate(CO2 = CO2 - min(CO2)) |>
-            # main plot, with points colored by being within the offset window
-            ggplot(aes(start_time_offset, CO2, color = in_offset)) +
-            geom_point(size = 0.5, na.rm = TRUE) +
-            scale_color_manual(values = c("grey", "black")) +
-            # the current measurement mapping
-            geom_vline(xintercept = 0, linetype = 1) +
-            geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
-            # proposed mapping with offset
-            geom_vline(xintercept = 0 + alg_offset, linetype = 2, color = "red") +
-            geom_vline(xintercept = MSMT_LENGTH + alg_offset, linetype = 2, color = "red") +
-            facet_wrap(~hour, ncol = 3) +
-            guides(color = "none") +
-            xlab("LI7810 time relative to metadata start_time (s)") +
-            ylab("Relative CO2 (ppm)") ->
-            p_plot_offset
-
-        title <- paste(DATE_TO_PROCESS, pl, "(select hours)")
-        subtitle <- paste("Metadata times in black;",
-                          "auto-offset of", alg_offset, "in red")
-        # If user has requested a manual offset, display that too
-        if(offset_type == "manual") {
-            p_plot_offset <- p_plot_offset +
-                geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "pink") +
-                geom_vline(xintercept = MSMT_LENGTH + current_offset, linetype = 2, color = "pink")
-            subtitle <- paste0(subtitle, "; manual offset of ", current_offset, " in pink")
-        }
-        p_plot_offset <- p_plot_offset + ggtitle(title, subtitle = subtitle)
-        print(p_plot_offset)
-
-        done <- readline(paste0(pl, ": accept ", offset_type, " offset of ",
-                                current_offset, "? "))
-        done <- tolower(trimws(done)) %in% c("y", "yes")
-        if(!done) {
-            readline(paste(pl, ": manual offset (0=none): ")) |>
-                as.numeric() ->
-                current_offset
-            offset_type <- "manual"
-        }
-    } # while
-    message(paste0(pl, ": final plot-level offset is ", current_offset,
-                   " (", offset_type, ")"))
-
-    pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl, "_7810_plotoffset.pdf"))
-    message("Saving ", pfn)
-    ggsave(pfn, width = 8, height = 5)
-
-    # Save plot-level offset information
-    newdat <- tibble(Date = DATE_TO_PROCESS,
-                     Instrument = "7810", 
-                     Plot = pl,
-                     Clock_offset = current_offset,
-                     Offset_type = offset_type)
+    # Check: is there are already offset info for this date and instrument?
     if(nrow(plot_offsets) > 0) {
         plot_offsets |>
-            filter(Date != DATE_TO_PROCESS | Plot != pl) |>
-            bind_rows(newdat) ->
-            plot_offsets
-    } else {
-        plot_offsets <- newdat
-    }
-    message("Updating ", PLOT_OFFSET_FILE)
-    write_csv(plot_offsets, PLOT_OFFSET_FILE)
+            filter(Date == DATE_TO_PROCESS, Instrument == ins_name) ->
+            this_offsets
 
-    # Collar-specific offset changes ----
-
-    offset_data <- tibble(Date = DATE_TO_PROCESS,
-                          label = unique(li7810_plotgroups$label),
-                          collar_offset = current_offset)
-    collar_adjustment_made <- FALSE
-
-    not_done <- TRUE
-    while(not_done) {
-        li7810_plotgroups |>
-            mutate(in_offset = start_time_offset >= 0 + current_offset &
-                       start_time_offset <= MSMT_LENGTH + current_offset) |>
-            group_by(hour) |>
-            mutate(CO2 = CO2 - min(CO2)) |>
-            # main plot, with points colored by being within the offset window
-            ggplot(aes(start_time_offset, CO2, color = in_offset)) +
-            geom_point(size = 0.5, na.rm = TRUE) +
-            scale_color_manual(values = c("grey", "black")) +
-            # the current measurement mapping
-            geom_vline(xintercept = 0, linetype = 1) +
-            geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
-            # collar-specific offset
-            geom_vline(data = offset_data, aes(xintercept = 0 + collar_offset),
-                       linetype = 2, color = "pink") +
-            geom_vline(data = offset_data, aes(xintercept = MSMT_LENGTH + collar_offset),
-                       linetype = 2, color = "pink") +
-            # proposed mapping with offset
-            geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "red") +
-            geom_vline(xintercept = MSMT_LENGTH + current_offset, linetype = 2, color = "red") +
-            facet_wrap(~label, ncol = 3) +
-            guides(color = "none") +
-            xlab("LI7810 time relative to metadata start_time (s)") +
-            ylab("Relative CO2 (ppm)") ->
-            p_collar_offset
-
-        title <- paste(DATE_TO_PROCESS, pl, "(by collar)")
-        subtitle <- paste("Metadata times in black; plot offset of",
-                          current_offset,
-                          "in red; collar-specific offsets in pink")
-        p_collar_offset <- p_collar_offset + ggtitle(title, subtitle = subtitle)
-        print(p_collar_offset)
-
-        not_done <- readline(paste0(pl, ": any",
-                                    if_else(collar_adjustment_made, " more", ""),
-                                    " collar-specific offsets to change? (do not enter collar number yet)"))
-        not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
-        if(not_done) {
-            collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
-
-            if(collar_to_change %in% offset_data$label) {
-                new_offset <- readline(paste0(pl, " ", collar_to_change,
-                                              ": new offset?: "))
-                offset_data$collar_offset[offset_data$label == collar_to_change] <-
-                    as.numeric(new_offset)
-                collar_adjustment_made <- TRUE
-            } else {
-                message("That isn't one of the collars!")
-            }
+        if(nrow(this_offsets) > 0) {
+            message("WARNING: an entry for this date ", DATE_TO_PROCESS,
+                    " and instrument ", ins_name,
+                    " already exists in ", PLOT_OFFSET_FILE)
+            ok <- askYesNo(paste("Continue, overwriting previous", ins_name, "data? "))
+            stopifnot(ok)
         }
-    } # while
+    }
 
-    if(collar_adjustment_made) {
-        message(paste0(pl, ": the following collar adjustments were made"))
-        offset_data |>
-            filter(collar_offset != current_offset) |> 
-            mutate(Instrument == "7810") ->
-            new_offsets
-        print(new_offsets)
-        collar_specific_offsets |>
-            bind_rows(new_offsets) ->
-            collar_specific_offsets
+    # ===================================================
+    # Secondary loop: go through plots
+    # ===================================================
 
-        message("Updating ", COLLAR_OFFSET_FILE)
-        write_csv(collar_specific_offsets, COLLAR_OFFSET_FILE)
+    # For each plot, combine algorithmic analysis with human QAQC to set
+    # (1) The overall offset between 8100 (metadata) and 78x0 (concentration) clocks
+    # (2) Any collar-specific offsets
+    plots <- unique(md$Plot)
+    #plots <- "Control" # for testing
+    for(pl in plots) {
+        md |>
+            filter(Plot == pl) |>
+            arrange(start_time) |>
+            select(label, start_time, end_time) ->
+            md_plot
+        md_plot$group <- seq_len(nrow(md_plot))
+        li78x0dat |>
+            filter(Plot == pl) |>
+            select(TIMESTAMP, matchvar) |>
+            arrange(TIMESTAMP) |>
+            mutate(hour = hour(TIMESTAMP)) ->
+            li78x0_plot
+        message("------------------------------------------------")
+        message(DATE_TO_PROCESS, " ", ins_name, " ", pl)
+        message("\tmetadata:  ", nrow(md_plot), " x ", ncol(md_plot))
+        message("\tconcentrations: ", nrow(li78x0_plot), " x ", ncol(li78x0_plot))
+        if(nrow(li78x0_plot) == 0) {
+            message("\tWARNING: no concentration data available!")
+            next
+        }
 
-        pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl,
-                                               "_7810_collaroffsets.pdf"))
+        # Find the metadata group for each row in the 78x0 observations,
+        # as well as the 'context window' group, which is the group with +/-
+        # some amount of time on either side
+        li78x0_plot$group <-
+            quick_match_numeric(md_plot$start_time,
+                                li78x0_plot$TIMESTAMP,
+                                length = MSMT_LENGTH)
+        li78x0_plot$context_window <-
+            quick_match_numeric(md_plot$start_time,
+                                li78x0_plot$TIMESTAMP,
+                                length = MSMT_LENGTH,
+                                left_extra = 60, right_extra = 60)
+
+        # For plotting, we want to associate the start time with each
+        # context window, so that each group's data can be plotted with
+        # context (previous and following 78x0 data that do not, currently,
+        # 'match')
+        li78x0_plot |>
+            left_join(md_plot, by = c("context_window" = "group")) |>
+            mutate(start_time_offset = as.numeric(TIMESTAMP - start_time)) ->
+            li78x0_plotgroups
+
+        # Algorithmic plot-level offset ----
+
+        # Search for the best offset between the LI8100 and LI78x0 clocks
+        message("\tsearching for best-performing clock offset...")
+        offset_results <- search_offsets(md_plot$start_time,
+                                         li78x0_plotgroups$TIMESTAMP,
+                                         li78x0_plotgroups$matchvar,
+                                         mst_length = MSMT_LENGTH)
+
+        offset_results |>
+            filter(mean_R2 == max(mean_R2)) |>
+            summarise(mean_offset = mean(offset)) |>
+            pull(mean_offset) ->
+            alg_offset
+        current_offset <- alg_offset
+        offset_type <- "algorithmic"
+
+        # Plot R2 values as a function of potential offsets
+        p_offset_results <- ggplot(offset_results, aes(x = offset, y = mean_R2)) +
+            geom_point() +
+            xlab("Tested clock offset (s)") +
+            ggtitle(paste(DATE_TO_PROCESS, ins_name, pl, "offset analysis; best =", alg_offset))
+        print(p_offset_results)
+        readline("Hit <Return> to see next plot: ")
+
+        # Save
+        DATE_NO_DASHES <- gsub("-", "", DATE_TO_PROCESS)
+        pfn <- file.path(PROCESSED_DIR,
+                         paste0(DATE_NO_DASHES, "_", ins_name, "_", pl, "_alloffsets.pdf"))
         message("Saving ", pfn)
         ggsave(pfn, width = 8, height = 5)
-    } else {
-        message(paste0(pl, ": no collar adjustments made"))
-    }
 
-    # TODO: offer to adjust measurement length?
+        # Show user the data for this plot and date, with vertical lines
+        # to mark the algorithmic and (if desired, manual) offset
+        done <- FALSE
+        while(!done) {
+            # the clocks won't drift super fast; for plotting clarity,
+            # only show a subselection of hours in the day
+            li78x0_plotgroups |>
+                filter(hour %% 4 == 0) |>
+                mutate(in_offset = start_time_offset >= 0 + current_offset &
+                           start_time_offset <= MSMT_LENGTH + current_offset) |>
+                # normalize the match variable just to make more effective use of graphing space
+                group_by(hour) |>
+                mutate(matchvar = matchvar - min(matchvar)) |>
+                # main plot, with points colored by being within the offset window
+                ggplot(aes(start_time_offset, matchvar, color = in_offset)) +
+                geom_point(size = 0.5, na.rm = TRUE) +
+                scale_color_manual(values = c("grey", "black")) +
+                # the current measurement mapping
+                geom_vline(xintercept = 0, linetype = 1) +
+                geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
+                # proposed mapping with offset
+                geom_vline(xintercept = 0 + alg_offset, linetype = 2, color = "red") +
+                geom_vline(xintercept = MSMT_LENGTH + alg_offset, linetype = 2, color = "red") +
+                facet_wrap(~hour, ncol = 3) +
+                guides(color = "none") +
+                xlab(paste(ins_name, "time relative to metadata start_time (s)")) +
+                ylab(paste0("Relative ", ins_matchvar, " (", ins_units, ")")) ->
+                p_plot_offset
 
-} # for pl
+            title <- paste(DATE_TO_PROCESS, ins_name, pl, "(select hours)")
+            subtitle <- paste("Metadata times in black;",
+                              "auto-offset of", alg_offset, "in red")
+            # If user has requested a manual offset, display that too
+            if(offset_type == "manual") {
+                p_plot_offset <- p_plot_offset +
+                    geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "pink") +
+                    geom_vline(xintercept = MSMT_LENGTH + current_offset, linetype = 2, color = "pink")
+                subtitle <- paste0(subtitle, "; manual offset of ", current_offset, " in pink")
+            }
+            p_plot_offset <- p_plot_offset + ggtitle(title, subtitle = subtitle)
+            print(p_plot_offset)
 
+            done <- readline(paste0(DATE_TO_PROCESS, " ",
+                                    ins_name, " ",
+                                    pl, ": accept ", offset_type,
+                                    " offset of ", current_offset, "? "))
+            done <- tolower(trimws(done)) %in% c("y", "yes")
+            if(!done) {
+                readline(paste(pl, ": manual offset (0=none): ")) |>
+                    as.numeric() ->
+                    current_offset
+                offset_type <- "manual"
+            }
+        } # while
+        message(paste0(ins_name, " ", pl, ": final plot-level offset is ",
+                       current_offset, " (", offset_type, ")"))
 
-####7820####
-## Existing plot offset data, if any ----
+        pfn <- file.path(PROCESSED_DIR,
+                         paste0(DATE_NO_DASHES, "_", ins_name, "_", pl,"_plotoffset.pdf"))
+        message("Saving ", pfn)
+        ggsave(pfn, width = 8, height = 5)
 
-# Read gas concentration data ----
+        # Save plot-level offset information
+        newdat <- tibble(Date = DATE_TO_PROCESS,
+                         Instrument = ins_name,
+                         Plot = pl,
+                         Clock_offset = current_offset,
+                         Offset_type = offset_type)
+        if(nrow(plot_offsets) > 0) {
+            plot_offsets |>
+                filter(Date != DATE_TO_PROCESS | Plot != pl | Instrument != ins_name) |>
+                bind_rows(newdat) ->
+                plot_offsets
+        } else {
+            plot_offsets <- newdat
+        }
+        message("Updating ", PLOT_OFFSET_FILE)
+        write_csv(plot_offsets, PLOT_OFFSET_FILE)
 
-# Read the day-specific file prepared by script 1
-li7820file <- file.path(RAW_DIR, paste0("LI7820_", gsub("-", "", DATE_TO_PROCESS), ".parquet"))
-if(file.exists(li7820file)) {
-  message("Reading ", li7820file)
-  li7820dat <- read_parquet(li7820file)
-  li7820dat$TIMESTAMP <- force_tz(li7820dat$TIMESTAMP, "EST")
-} else {
-  # else what?
-  stop("There are no 7820 data available for ", DATE_TO_PROCESS, "!")
-}
-message("Concentration data file is ", nrow(li7820dat), " x ", ncol(li7820dat))
+        # Collar-specific offset changes ----
 
-## Matchy match ----
+        offset_data <- tibble(Date = DATE_TO_PROCESS,
+                              Instrument = ins_name,
+                              label = unique(li78x0_plotgroups$label),
+                              collar_offset = current_offset)
+        collar_adjustment_made <- FALSE
 
-if(nrow(plot_offsets) > 0 &&
-   nrow(plot_offsets[plot_offsets$"Date" == DATE_TO_PROCESS,])) {
-  message("WARNING: this date ", DATE_TO_PROCESS, " already exists in ", PLOT_OFFSET_FILE)
-  ok <- askYesNo("Continue, overwriting previous 7820 data? ")
-  stopifnot(ok)
-}
+        not_done <- TRUE
+        while(not_done) {
+            li78x0_plotgroups |>
+                mutate(in_offset = start_time_offset >= 0 + current_offset &
+                           start_time_offset <= MSMT_LENGTH + current_offset) |>
+                group_by(hour) |>
+                mutate(matchvar = matchvar - min(matchvar)) |>
+                # main plot, with points colored by being within the offset window
+                ggplot(aes(start_time_offset, matchvar, color = in_offset)) +
+                geom_point(size = 0.5, na.rm = TRUE) +
+                scale_color_manual(values = c("grey", "black")) +
+                # the current measurement mapping
+                geom_vline(xintercept = 0, linetype = 1) +
+                geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
+                # collar-specific offset
+                geom_vline(data = offset_data, aes(xintercept = 0 + collar_offset),
+                           linetype = 2, color = "pink") +
+                geom_vline(data = offset_data, aes(xintercept = MSMT_LENGTH + collar_offset),
+                           linetype = 2, color = "pink") +
+                # proposed mapping with offset
+                geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "red") +
+                geom_vline(xintercept = MSMT_LENGTH + current_offset, linetype = 2, color = "red") +
+                facet_wrap(~label, ncol = 3) +
+                guides(color = "none") +
+                xlab(paste(ins_name, "time relative to metadata start_time (s)")) +
+                ylab(paste0("Relative ", ins_matchvar, " (", ins_units, ")")) ->
+                p_collar_offset
 
-# For each plot, combine algorithmic analysis with human QAQC to set
-# (1) The overall offset between 8100 (metadata) and 7810 (concentration) clocks
-# (2) Any collar-specific offsets
-plots <- unique(md$Plot)
-#plots <- "Control" # for testing
-for(pl in plots) {
-  md |>
-    filter(Plot == pl) |>
-    arrange(start_time) |>
-    select(label, start_time, end_time) ->
-    md_plot
-  md_plot$group <- seq_len(nrow(md_plot))
-  li7820dat |>
-    filter(Plot == pl) |>
-    select(TIMESTAMP, H2O) |>
-    arrange(TIMESTAMP) |>
-    mutate(hour = hour(TIMESTAMP)) ->
-    li7820_plot
-  message("------------------------------------------------")
-  message(DATE_TO_PROCESS, " ", pl)
-  message("\tmetadata:  ", nrow(md_plot), " x ", ncol(md_plot))
-  message("\tconcentrations: ", nrow(li7820_plot), " x ", ncol(li7820_plot))
-  
-  # Find the metadata group for each row in the 7810 observations,
-  # as well as the 'context window' group, which is the group with +/-
-  # some amount of time on either side
-  li7820_plot$group <-
-    quick_match_numeric(md_plot$start_time,
-                        li7820_plot$TIMESTAMP,
-                        length = MSMT_LENGTH)
-  li7820_plot$context_window <-
-    quick_match_numeric(md_plot$start_time,
-                        li7820_plot$TIMESTAMP,
-                        length = MSMT_LENGTH,
-                        left_extra = 60, right_extra = 60)
-  
-  # For plotting, we want to associate the start time with each
-  # context window, so that each group's data can be plotted with
-  # context (previous and following 7820 data that do not, currently,
-  # 'match')
-  li7820_plot |>
-    left_join(md_plot, by = c("context_window" = "group")) |>
-    mutate(start_time_offset = as.numeric(TIMESTAMP - start_time)) ->
-    li7820_plotgroups
-  
-  # Algorithmic plot-level offset ----
-  
-  # Search for the best offset between the LI8100 and LI7820 clocks
-  message("\tsearching for best-performing clock offset...")
-  offset_results <- search_offsets(md_plot$start_time,
-                                   li7820_plotgroups$TIMESTAMP,
-                                   li7820_plotgroups$H2O,
-                                   mst_length = MSMT_LENGTH)
-  
-  offset_results |>
-    filter(mean_R2 == max(mean_R2)) |>
-    summarise(mean_offset = mean(offset)) |>
-    pull(mean_offset) ->
-    alg_offset
-  current_offset <- alg_offset
-  offset_type <- "algorithmic"
-  
-  p_offset_results <- ggplot(offset_results, aes(x = offset, y = mean_R2)) +
-    geom_point() +
-    xlab("Tested clock offset (s)") +
-    ggtitle(paste(DATE_TO_PROCESS, pl, "offset analysis; best =", alg_offset))
-  print(p_offset_results)
-  readline("Hit <Return> to see next plot: ")
-  
-  # Save
-  DATE_NO_DASHES <- gsub("-", "", DATE_TO_PROCESS)
-  pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl, "_alloffsets.pdf"))
-  message("Saving ", pfn)
-  ggsave(pfn, width = 8, height = 5)
-  
-  # Show user the data for this plot and date, with vertical lines
-  # to mark the algorithmic and (if desired, manual) offset
-  done <- FALSE
-  while(!done) {
-    # the clocks won't drift super fast; for plotting clarity,
-    # only show a subselection of hours in the day
-    li7820_plotgroups |>
-      filter(hour %% 4 == 0) |>
-      mutate(in_offset = start_time_offset >= 0 + current_offset &
-               start_time_offset <= MSMT_LENGTH + current_offset) |>
-      # normalize H2O just to make more effective use of graphing space
-      group_by(hour) |>
-      mutate(H2O = H2O - min(H2O)) |>
-      # main plot, with points colored by being within the offset window
-      ggplot(aes(start_time_offset, H2O, color = in_offset)) +
-      geom_point(size = 0.5, na.rm = TRUE) +
-      scale_color_manual(values = c("grey", "black")) +
-      # the current measurement mapping
-      geom_vline(xintercept = 0, linetype = 1) +
-      geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
-      # proposed mapping with offset
-      geom_vline(xintercept = 0 + alg_offset, linetype = 2, color = "red") +
-      geom_vline(xintercept = MSMT_LENGTH + alg_offset, linetype = 2, color = "red") +
-      facet_wrap(~hour, ncol = 3) +
-      guides(color = "none") +
-      xlab("LI7820 time relative to metadata start_time (s)") +
-      ylab("Relative H2O") ->
-      p_plot_offset
-    
-    title <- paste(DATE_TO_PROCESS, pl, "(select hours)")
-    subtitle <- paste("Metadata times in black;",
-                      "auto-offset of", alg_offset, "in red")
-    # If user has requested a manual offset, display that too
-    if(offset_type == "manual") {
-      p_plot_offset <- p_plot_offset +
-        geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "pink") +
-        geom_vline(xintercept = MSMT_LENGTH + current_offset, linetype = 2, color = "pink")
-      subtitle <- paste0(subtitle, "; manual offset of ", current_offset, " in pink")
-    }
-    p_plot_offset <- p_plot_offset + ggtitle(title, subtitle = subtitle)
-    print(p_plot_offset)
-    
-    done <- readline(paste0(pl, ": accept ", offset_type, " offset of ",
-                            current_offset, "? "))
-    done <- tolower(trimws(done)) %in% c("y", "yes")
-    if(!done) {
-      readline(paste(pl, ": manual offset (0=none): ")) |>
-        as.numeric() ->
-        current_offset
-      offset_type <- "manual"
-    }
-  } # while
-  message(paste0(pl, ": final plot-level offset is ", current_offset,
-                 " (", offset_type, ")"))
-  
-  pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl, "_7820_plotoffset.pdf"))
-  message("Saving ", pfn)
-  ggsave(pfn, width = 8, height = 5)
-  
-  # Save plot-level offset information
-  newdat <- tibble(Date = DATE_TO_PROCESS,
-                   Instrument = "7810", 
-                   Plot = pl,
-                   Clock_offset = current_offset,
-                   Offset_type = offset_type)
-  if(nrow(plot_offsets) > 0) {
-    plot_offsets |>
-      filter(Date != DATE_TO_PROCESS | Plot != pl) |>
-      bind_rows(newdat) ->
-      plot_offsets
-  } else {
-    plot_offsets <- newdat
-  }
-  message("Updating ", PLOT_OFFSET_FILE)
-  write_csv(plot_offsets, PLOT_OFFSET_FILE)
-  
-  # Collar-specific offset changes ----
-  
-  offset_data <- tibble(Date = DATE_TO_PROCESS,
-                        label = unique(li7820_plotgroups$label),
-                        collar_offset = current_offset)
-  collar_adjustment_made <- FALSE
-  
-  not_done <- TRUE
-  while(not_done) {
-    li7820_plotgroups |>
-      mutate(in_offset = start_time_offset >= 0 + current_offset &
-               start_time_offset <= MSMT_LENGTH + current_offset) |>
-      group_by(hour) |>
-      mutate(H2O = H2O - min(H2O)) |>
-      # main plot, with points colored by being within the offset window
-      ggplot(aes(start_time_offset, H2O, color = in_offset)) +
-      geom_point(size = 0.5, na.rm = TRUE) +
-      scale_color_manual(values = c("grey", "black")) +
-      # the current measurement mapping
-      geom_vline(xintercept = 0, linetype = 1) +
-      geom_vline(xintercept = MSMT_LENGTH, linetype = 1) +
-      # collar-specific offset
-      geom_vline(data = offset_data, aes(xintercept = 0 + collar_offset),
-                 linetype = 2, color = "pink") +
-      geom_vline(data = offset_data, aes(xintercept = MSMT_LENGTH + collar_offset),
-                 linetype = 2, color = "pink") +
-      # proposed mapping with offset
-      geom_vline(xintercept = 0 + current_offset, linetype = 2, color = "red") +
-      geom_vline(xintercept = MSMT_LENGTH + current_offset, linetype = 2, color = "red") +
-      facet_wrap(~label, ncol = 3) +
-      guides(color = "none") +
-      xlab("LI7820 time relative to metadata start_time (s)") +
-      ylab("Relative H2O") ->
-      p_collar_offset
-    
-    title <- paste(DATE_TO_PROCESS, pl, "(by collar)")
-    subtitle <- paste("Metadata times in black; plot offset of",
-                      current_offset,
-                      "in red; collar-specific offsets in pink")
-    p_collar_offset <- p_collar_offset + ggtitle(title, subtitle = subtitle)
-    print(p_collar_offset)
-    
-    not_done <- readline(paste0(pl, ": any",
-                                if_else(collar_adjustment_made, " more", ""),
-                                " collar-specific offsets to change? (do not enter collar number yet)"))
-    not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
-    if(not_done) {
-      collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
-      
-      if(collar_to_change %in% offset_data$label) {
-        new_offset <- readline(paste0(pl, " ", collar_to_change,
-                                      ": new offset?: "))
-        offset_data$collar_offset[offset_data$label == collar_to_change] <-
-          as.numeric(new_offset)
-        collar_adjustment_made <- TRUE
-      } else {
-        message("That isn't one of the collars!")
-      }
-    }
-  } # while
-  
-  if(collar_adjustment_made) {
-    message(paste0(pl, ": the following collar adjustments were made"))
-    offset_data |>
-      filter(collar_offset != current_offset)  |> 
-      mutate(Instrument == "7810") ->
-      new_offsets
-    print(new_offsets)
-    collar_specific_offsets |>
-      bind_rows(new_offsets) ->
-      collar_specific_offsets
-    
-    message("Updating ", COLLAR_OFFSET_FILE)
-    write_csv(collar_specific_offsets, COLLAR_OFFSET_FILE)
-    
-    pfn <- file.path(PROCESSED_DIR, paste0(DATE_NO_DASHES, "_", pl,
-                                           "_7820_collaroffsets.pdf"))
-    message("Saving ", pfn)
-    ggsave(pfn, width = 8, height = 5)
-  } else {
-    message(paste0(pl, ": no collar adjustments made"))
-  }
-  
-  # TODO: offer to adjust measurement length?
-  
-} # for pl
+            title <- paste(DATE_TO_PROCESS, ins_name, pl, "(by collar)")
+            subtitle <- paste("Metadata times in black; plot offset of",
+                              current_offset,
+                              "in red; collar-specific offsets in pink")
+            p_collar_offset <- p_collar_offset + ggtitle(title, subtitle = subtitle)
+            print(p_collar_offset)
+
+            not_done <- readline(paste0(ins_name, " ", pl, ": any",
+                                        if_else(collar_adjustment_made, " more", ""),
+                                        " collar-specific offsets to change (do not enter collar number yet)?"))
+            not_done <- tolower(trimws(not_done)) %in% c("y", "yes")
+            if(not_done) {
+                collar_to_change <- readline(paste0(pl, ": which collar (0=none): "))
+
+                if(collar_to_change %in% offset_data$label) {
+                    new_offset <- readline(paste0(pl, " ", collar_to_change,
+                                                  ": new offset?: "))
+                    offset_data$collar_offset[offset_data$label == collar_to_change] <-
+                        as.numeric(new_offset)
+                    collar_adjustment_made <- TRUE
+                } else {
+                    message("That isn't one of the collars!")
+                }
+            }
+        } # while
+
+        if(collar_adjustment_made) {
+            message(paste0(pl, ": the following collar adjustments were made"))
+            offset_data |>
+                filter(collar_offset != current_offset) ->
+                new_offsets
+            print(new_offsets)
+            collar_specific_offsets |>
+                bind_rows(new_offsets) ->
+                collar_specific_offsets
+
+            message("Updating ", COLLAR_OFFSET_FILE)
+            write_csv(collar_specific_offsets, COLLAR_OFFSET_FILE)
+
+            pfn <- file.path(PROCESSED_DIR,
+                             paste0(DATE_NO_DASHES, "_", ins_name, "_", pl, "_collaroffsets.pdf"))
+            message("Saving ", pfn)
+            ggsave(pfn, width = 8, height = 5)
+        } else {
+            message(paste0(pl, ": no collar adjustments made"))
+        }
+
+        # TODO: offer to adjust measurement length?
+
+    } # for pl
+
+} # for ins
 
 message("All done")
-
